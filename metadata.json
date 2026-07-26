@@ -1,0 +1,6 @@
+{
+  "name": "ASTRALIS",
+  "description": "Plataforma premium de tarot, astrología, directos en vivo y consultas privadas 1:1 con profesionales verificados.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

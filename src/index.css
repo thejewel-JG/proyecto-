@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-cinzel {
+    font-family: 'Cinzel', serif;
+  }
+  .font-playfair {
+    font-family: 'Playfair Display', serif;
+  }
+  .font-cormorant {
+    font-family: 'Cormorant Garamond', serif;
+  }
+  .font-manrope {
+    font-family: 'Manrope', sans-serif;
+  }
+
+  .glass-card {
+    background: rgba(46, 27, 71, 0.45);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(212, 175, 55, 0.18);
+  }
+
+  .glass-card-interactive {
+    background: rgba(46, 27, 71, 0.45);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(212, 175, 55, 0.18);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-card-interactive:hover {
+    background: rgba(58, 32, 90, 0.6);
+    border-color: rgba(212, 175, 55, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(90, 45, 130, 0.3);
+  }
+
+  .gold-glow {
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.25);
+  }
+
+  .purple-glow {
+    box-shadow: 0 0 25px rgba(90, 45, 130, 0.4);
+  }
+
+  .text-gold-glow {
+    text-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
+  }
+
+  .video-overlay-gradient {
+    background: linear-gradient(to top, rgba(11, 9, 17, 0.95) 0%, rgba(11, 9, 17, 0.3) 40%, transparent 70%);
+  }
+}
+
+/* Material Symbols Fill state */
+.filled {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+}
+
+/* Hide scrollbar for clean app feel */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.85; }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.5s infinite ease-in-out;
+}
+
