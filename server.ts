@@ -6,10 +6,11 @@ if (process.env.NODE_ENV !== 'test' && !process.env.TEST_RUN) {
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
-import { initDatabase, getDb } from './src/db/database';
+import { initDatabase, getDb, getDbError } from './src/db/database';
 import {
   registerUser,
   loginUser,
@@ -46,7 +47,11 @@ const ai = new GoogleGenAI({
 
 export async function createServerApp() {
   // Inicializar base de datos relacional y migraciones
-  await initDatabase();
+  try {
+    await initDatabase();
+  } catch (err: any) {
+    console.error('[Database Warning]:', err.message);
+  }
 
   const app = express();
 
@@ -56,7 +61,24 @@ export async function createServerApp() {
 
   // Health check
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
+    const dbErr = getDbError();
+    res.status(dbErr ? 503 : 200).json({
+      status: dbErr ? 'database_error' : 'ok',
+      error: dbErr,
+      time: new Date().toISOString()
+    });
+  });
+
+  // Middleware de validación de base de datos
+  app.use('/api', (req, res, next) => {
+    const dbErr = getDbError();
+    if (dbErr && req.path !== '/health') {
+      return res.status(503).json({
+        error: 'Error de conexión con la base de datos relacional.',
+        details: dbErr,
+      });
+    }
+    next();
   });
 
   // ---------------------------------------------------------------------------
@@ -418,7 +440,7 @@ REGLAS OBLIGATORIAS:
 
 export async function startServer() {
   const app = await createServerApp();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+  const PORT = process.env.PORT || 3001;
 
   // Vite Middleware for Dev
   if (process.env.NODE_ENV !== 'production') {
@@ -429,27 +451,60 @@ export async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    const indexHtmlPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+    }
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      if (fs.existsSync(indexHtmlPath)) {
+        res.sendFile(indexHtmlPath);
+      } else {
+        res.status(503).send(`
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="UTF-8">
+            <title>KABALY - Inicializando</title>
+            <style>
+              body { background: #0B0911; color: #D4AF37; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+              .card { border: 1px solid rgba(212, 175, 55, 0.3); padding: 40px; border-radius: 12px; max-width: 500px; background: rgba(18, 14, 28, 0.9); }
+              h1 { margin-top: 0; font-size: 28px; }
+              p { color: #A09BAE; line-height: 1.6; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>KABALY</h1>
+              <p>El servidor backend está activo y funcionando.</p>
+              <p><small>${new Date().toISOString()}</small></p>
+            </div>
+          </body>
+          </html>
+        `);
+      }
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[KABALY Server] Running on http://localhost:${PORT}`);
-  });
+  if (typeof PORT === 'string' && isNaN(Number(PORT))) {
+    app.listen(PORT, () => {
+      console.log(`[KABALY Server] Listening on UNIX socket ${PORT}`);
+    });
+  } else {
+    const numericPort = Number(PORT);
+    app.listen(numericPort, '0.0.0.0', () => {
+      console.log(`[KABALY Server] Running on http://localhost:${numericPort}`);
+    });
+  }
 }
 
-// Iniciar solo si se ejecuta directamente como script principal (no al importarse en pruebas)
-const isMainScript = process.argv[1] && (
+// Iniciar automáticamente solo si se invoca directamente desde línea de comandos (npm run dev / tsx server.ts)
+const isDirectCli = process.argv[1] && (
   process.argv[1].endsWith('server.ts') || 
-  process.argv[1].endsWith('server.js') || 
   process.argv[1].endsWith('server.cjs')
 );
 
-if (isMainScript) {
+if (isDirectCli && process.env.NODE_ENV !== 'test' && !process.env.TEST_RUN) {
   startServer().catch(err => {
     console.error('[FATAL SERVER ERROR]:', err);
-    process.exit(1);
   });
 }

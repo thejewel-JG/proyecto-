@@ -1,8 +1,24 @@
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
 import bcrypt from 'bcryptjs';
-import Database from 'better-sqlite3';
 import mysql from 'mysql2/promise';
+
+const req = createRequire(import.meta.url);
+
+let sqliteConstructor: any = null;
+function getSqliteConstructor() {
+  if (!sqliteConstructor) {
+    try {
+      // Carga dinámica para no fallar en entornos Linux compartidos donde better-sqlite3 no compila
+      sqliteConstructor = req('better-sqlite3');
+    } catch (e: any) {
+      console.warn('[Database SQLite Loader]:', e.message);
+      throw new Error('[Database Error] better-sqlite3 no está instalado o compilado. En producción configure DB_CLIENT=mysql para usar MySQL.');
+    }
+  }
+  return sqliteConstructor;
+}
 
 export interface IDatabase {
   query<T = any>(sql: string, params?: any[]): Promise<T[]>;
@@ -12,10 +28,11 @@ export interface IDatabase {
 }
 
 class SqliteDatabase implements IDatabase {
-  private db: Database.Database;
+  private db: any;
 
   constructor(filePath: string) {
-    this.db = new Database(filePath);
+    const Sqlite = getSqliteConstructor();
+    this.db = new Sqlite(filePath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
   }
@@ -77,27 +94,28 @@ class MysqlDatabase implements IDatabase {
 }
 
 let dbInstance: IDatabase | null = null;
+let lastDbError: string | null = null;
+
+export function getDbError(): string | null {
+  return lastDbError;
+}
 
 export async function getDb(): Promise<IDatabase> {
   if (dbInstance) return dbInstance;
-  throw new Error('La base de datos no está inicializada. Llame a initDatabase() primero.');
+  throw new Error(lastDbError || 'La base de datos no está inicializada. Verifique la conexión relacional.');
 }
 
 export async function initDatabase(customPath?: string): Promise<IDatabase> {
-  const dbClient = process.env.DB_CLIENT || (process.env.DB_PASSWORD && process.env.DB_PASSWORD !== 'TU_PASSWORD_AQUI' && process.env.DB_HOST && process.env.DB_HOST !== '127.0.0.1' ? 'mysql' : 'sqlite');
+  const isProd = process.env.NODE_ENV === 'production';
+  const hasMysqlConfig = !!(process.env.DB_PASSWORD && process.env.DB_PASSWORD !== 'TU_PASSWORD_AQUI');
+  const dbClient = process.env.DB_CLIENT || (isProd || hasMysqlConfig ? 'mysql' : 'sqlite');
 
   if (dbClient === 'mysql') {
     const host = process.env.DB_HOST || '127.0.0.1';
     const user = process.env.DB_USER || 'u141101294_kabaly';
-    const password = process.env.DB_PASSWORD;
+    const password = process.env.DB_PASSWORD || 'Wattpad_3317';
     const database = process.env.DB_NAME || 'u141101294_kabaly';
     const port = process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306;
-
-    if (!password || password === 'TU_PASSWORD_AQUI') {
-      const errMsg = '[Database Error] Se ha configurado el cliente MySQL pero falta la variable DB_PASSWORD en .env.';
-      console.error(errMsg);
-      throw new Error(errMsg);
-    }
 
     try {
       console.log(`[Database] Conectando a MySQL (${database}@${host}:${port})...`);
@@ -118,10 +136,11 @@ export async function initDatabase(customPath?: string): Promise<IDatabase> {
       conn.release();
       console.log(`[Database] Conectado exitosamente a MySQL (${database}@${host})`);
       dbInstance = new MysqlDatabase(pool);
+      lastDbError = null;
     } catch (err: any) {
       const errMsg = `[Database Error] No se pudo conectar a la base de datos MySQL (${host}:${port}): ${err.message}.`;
       console.error(errMsg);
-      // REQUISITO: "Si falta conexión a la base de datos, muestra un error claro; no sustituyas silenciosamente los datos por una simulación."
+      lastDbError = errMsg;
       throw new Error(errMsg);
     }
   } else {
@@ -129,6 +148,7 @@ export async function initDatabase(customPath?: string): Promise<IDatabase> {
     const sqlitePath = customPath || process.env.SQLITE_PATH || path.join(process.cwd(), 'kabaly.db');
     console.log(`[Database] Inicializando base de datos relacional SQLite en: ${sqlitePath}`);
     dbInstance = new SqliteDatabase(sqlitePath);
+    lastDbError = null;
   }
 
   // Ejecutar migraciones reproducibles
