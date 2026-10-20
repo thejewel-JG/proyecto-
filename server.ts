@@ -28,7 +28,9 @@ import {
   ConsultationStatus
 } from './src/types';
 
-// Initialize In-Memory Persistent Store
+import { initDatabase, saveToDb } from './src/db/database';
+
+// Initialize In-Memory & Database Store
 let users: User[] = [...initialUsers];
 let tarotistaProfiles: TarotistaProfile[] = [...initialTarotistaProfiles];
 let videos: Video[] = [...initialVideos];
@@ -38,6 +40,28 @@ let reviews: Review[] = [...initialReviews];
 let ledger: LedgerTransaction[] = [...initialLedger];
 let reports: Report[] = [...initialReports];
 let withdrawals: WithdrawalRequest[] = [...initialWithdrawals];
+
+let saveDebounceTimer: NodeJS.Timeout | null = null;
+export function syncDbState() {
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(async () => {
+    try {
+      await Promise.all([
+        saveToDb('users', users),
+        saveToDb('tarotistaProfiles', tarotistaProfiles),
+        saveToDb('videos', videos),
+        saveToDb('liveStreams', liveStreams),
+        saveToDb('consultations', consultations),
+        saveToDb('reviews', reviews),
+        saveToDb('ledger', ledger),
+        saveToDb('reports', reports),
+        saveToDb('withdrawals', withdrawals),
+      ]);
+    } catch (e) {
+      console.error('[Database] Error sincronizando estado:', e);
+    }
+  }, 1000);
+}
 
 // Initialize Gemini Client server-side
 const ai = new GoogleGenAI({
@@ -50,10 +74,34 @@ const ai = new GoogleGenAI({
 });
 
 async function startServer() {
+  // Inicializar y cargar datos desde MySQL (o fallback si no hay conexión)
+  const dbState = await initDatabase();
+  users = dbState.users;
+  tarotistaProfiles = dbState.tarotistaProfiles;
+  videos = dbState.videos;
+  liveStreams = dbState.liveStreams;
+  consultations = dbState.consultations;
+  reviews = dbState.reviews;
+  ledger = dbState.ledger;
+  reports = dbState.reports;
+  withdrawals = dbState.withdrawals;
+
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
   app.use(express.json());
+
+  // Middleware de persistencia automática en base de datos para todas las mutaciones
+  app.use((req, res, next) => {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      res.on('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          syncDbState();
+        }
+      });
+    }
+    next();
+  });
 
   // API Routes
   app.get('/api/health', (req, res) => {
