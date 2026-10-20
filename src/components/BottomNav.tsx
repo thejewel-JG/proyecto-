@@ -17,7 +17,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     { id: 'feed', label: 'Feed', icon: 'home' },
     { id: 'explore', label: 'Explorar', icon: 'explore' },
     { id: 'live', label: 'Directos', icon: 'live_tv', badge: hasActiveLiveStream },
-    { id: 'astra_ai', label: 'Astra AI', icon: 'auto_awesome' },
+    { id: 'astra_ai', label: 'Kabaly AI', icon: 'auto_awesome' },
     { id: 'profile', label: 'Perfil', icon: 'person' },
   ];
 

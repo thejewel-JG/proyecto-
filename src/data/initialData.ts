@@ -131,8 +131,8 @@ export const initialUsers: User[] = [
   },
   {
     id: 'usr_admin',
-    name: 'Administrador ASTRALIS',
-    email: 'admin@astralis.app',
+    name: 'Administrador KABALY',
+    email: 'admin@kabaly.app',
     role: 'admin',
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200',
     coinsBalance: 50000,

@@ -481,7 +481,7 @@ export const App: React.FC = () => {
 
                 <h2 className="font-playfair text-lg font-bold text-[#D4AF37] flex items-center gap-2">
                   <span className="material-symbols-outlined">auto_awesome</span>
-                  Tarotistas Verificados ASTRALIS
+                  Tarotistas Verificados KABALY
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

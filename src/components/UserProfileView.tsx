@@ -46,7 +46,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   // Edit profile state
   const [editName, setEditName] = useState(currentUser.name);
   const [editHandle, setEditHandle] = useState(currentUser.handle || `@${currentUser.name.toLowerCase().replace(/\s+/g, '')}`);
-  const [editBio, setEditBio] = useState(currentUser.bio || 'Explorador del cosmos y apasionado del Tarot y la Astrología en ASTRALIS ✨');
+  const [editBio, setEditBio] = useState(currentUser.bio || 'Explorador del cosmos y apasionado del Tarot y la Astrología en KABALY ✨');
   const [editAvatar, setEditAvatar] = useState(currentUser.avatar);
   const [editCover, setEditCover] = useState(currentUser.coverImage || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200');
 
@@ -197,12 +197,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   ? 'bg-[#5A2D82] text-[#D4AF37] border border-[#D4AF37]'
                   : 'bg-[#2E1B47] text-[#A7A7A7]'
               }`}>
-                {currentUser.role === 'tarotista' ? '🔮 Tarotista Verificado' : '✨ Cliente Astralis'}
+                {currentUser.role === 'tarotista' ? '🔮 Tarotista Verificado' : '✨ Cliente Kabaly'}
               </span>
             </div>
 
             <p className="text-xs text-[#A7A7A7] max-w-xl leading-relaxed">
-              {currentUser.bio || 'Explorador del cosmos, lecturas de tarot, carta astral y revelaciones en ASTRALIS.'}
+              {currentUser.bio || 'Explorador del cosmos, lecturas de tarot, carta astral y revelaciones en KABALY.'}
             </p>
 
             {/* Role switch CTA */}

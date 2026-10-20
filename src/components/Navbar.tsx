@@ -93,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Center: Brand Logo */}
         <div className="flex flex-col items-center cursor-pointer">
           <h1 className="font-cinzel text-xl md:text-2xl font-bold tracking-[0.25em] text-[#F7E7C1] text-gold-glow uppercase leading-none">
-            ASTRALIS
+            KABALY
           </h1>
           <span className="text-[9px] font-manrope text-[#D4AF37] tracking-[0.3em] uppercase opacity-90 mt-0.5">
             TU DESTINO • TU MAGIA

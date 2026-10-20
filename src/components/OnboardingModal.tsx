@@ -41,7 +41,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
       return;
     }
     if (!isAgeVerified) {
-      alert('Debes confirmar que eres mayor de 18 años para usar ASTRALIS.');
+      alert('Debes confirmar que eres mayor de 18 años para usar KABALY.');
       return;
     }
     if (!acceptedTerms) {
@@ -57,7 +57,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
       tarotistaData: role === 'tarotista' ? {
         professionalName: professionalName || name,
         specialties: ['Tarot', 'Astrología', 'Lunas'],
-        bio: bio || 'Guía místico verificado en ASTRALIS.',
+        bio: bio || 'Guía místico verificado en KABALY.',
         experienceYears,
         pricePerMinCoins,
         languages: ['Español'],
@@ -73,7 +73,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         {/* Brand Header */}
         <div className="text-center mb-6">
           <h2 className="font-cinzel text-2xl font-bold tracking-[0.2em] text-[#F7E7C1] text-gold-glow uppercase">
-            ASTRALIS
+            KABALY
           </h2>
           <span className="text-[10px] text-[#D4AF37] tracking-[0.3em] uppercase block mt-1">
             Bienvenido a tu Espacio Sagrado
@@ -228,7 +228,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
             type="submit"
             className="w-full bg-[#D4AF37] text-[#0B0911] font-bold py-3.5 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-[1.02] active:scale-95 transition-all mt-4"
           >
-            Entrar a ASTRALIS
+            Entrar a KABALY
           </button>
         </form>
       </div>

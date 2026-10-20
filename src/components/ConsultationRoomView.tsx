@@ -108,7 +108,7 @@ export const ConsultationRoomView: React.FC<ConsultationRoomViewProps> = ({
     const reason = prompt('Indica el motivo del reporte o problema técnico durante la consulta:');
     if (reason) {
       onTransitionStatus(consultation.id, 'disputada', reason);
-      alert('Tu caso ha sido enviado al equipo de Resolución de Disputas de ASTRALIS. Un administrador revisará la sesión.');
+      alert('Tu caso ha sido enviado al equipo de Resolución de Disputas de KABALY. Un administrador revisará la sesión.');
     }
   };
 
@@ -308,7 +308,7 @@ export const ConsultationRoomView: React.FC<ConsultationRoomViewProps> = ({
             </div>
             <h3 className="font-playfair text-xl text-[#F7E7C1] font-bold mb-1">Valorar Consulta</h3>
             <p className="text-xs text-[#A7A7A7] mb-4">
-              Tu reseña ayuda a la comunidad de ASTRALIS a encontrar guías espirituales auténticos.
+              Tu reseña ayuda a la comunidad de KABALY a encontrar guías espirituales auténticos.
             </p>
 
             {/* Star Rating Picker */}

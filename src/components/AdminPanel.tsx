@@ -47,7 +47,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </button>
           <div>
             <h2 className="font-playfair text-2xl font-bold text-[#D4AF37] text-gold-glow">Panel de Control Admin</h2>
-            <span className="text-xs text-[#A7A7A7]">Plataforma de Moderación, KYC & Auditoría Financiera ASTRALIS</span>
+            <span className="text-xs text-[#A7A7A7]">Plataforma de Moderación, KYC & Auditoría Financiera KABALY</span>
           </div>
         </div>
 
@@ -64,7 +64,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         <div className="glass-card p-4 rounded-2xl border border-[#D4AF37]/30">
-          <span className="text-[10px] text-[#A7A7A7] uppercase font-bold tracking-wider block mb-1">Comisión ASTRALIS</span>
+          <span className="text-[10px] text-[#A7A7A7] uppercase font-bold tracking-wider block mb-1">Comisión KABALY</span>
           <span className="font-playfair text-2xl font-bold text-green-400">€{totalPlatformCommissionsEur.toFixed(2)}</span>
         </div>
 
@@ -237,7 +237,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* Tab 4: Financial Settings & Custom Commission Override */}
       {activeTab === 'finance' && (
         <div className="glass-card p-6 rounded-3xl border border-[#D4AF37]/30 space-y-4">
-          <h3 className="font-playfair text-lg text-[#D4AF37] font-bold">Configuración Global de Comisiones ASTRALIS</h3>
+          <h3 className="font-playfair text-lg text-[#D4AF37] font-bold">Configuración Global de Comisiones KABALY</h3>
           <p className="text-xs text-[#A7A7A7]">
             Comisión estándar de la plataforma: <span className="text-[#D4AF37] font-bold">20.0%</span> de cada consulta o regalo. Se pueden configurar porcentajes personalizados por tarotista según antigüedad o promociones.
           </p>

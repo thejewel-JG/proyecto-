@@ -136,7 +136,7 @@ async function startServer() {
     if (!user) {
       user = {
         id: `usr_${Date.now()}`,
-        name: name || 'Usuario Astralis',
+        name: name || 'Usuario Kabaly',
         email,
         role: role || 'cliente',
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
@@ -256,7 +256,7 @@ async function startServer() {
       tarotistaName: tarotistaProfile ? tarotistaProfile.professionalName : user.name,
       tarotistaAvatar: tarotistaProfile ? tarotistaProfile.avatar : user.avatar,
       isVerified: tarotistaProfile ? tarotistaProfile.isVerified : false,
-      title: title || 'Publicación en ASTRALIS ✨',
+      title: title || 'Publicación en KABALY ✨',
       videoUrl: mediaUrl,
       thumbnailUrl: mediaType === 'image' ? mediaUrl : (user.avatar || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=600'),
       category: category || 'Tarot',
@@ -499,7 +499,7 @@ async function startServer() {
           type: 'consultation_payout',
           amountCoins: consultation.tarotistaEarningsCoins,
           amountEur: consultation.tarotistaEarningsCoins / 10,
-          description: `Ingreso por consulta completada con ${consultation.clientName} (Comisión ASTRALIS ${tarotistaProfile.customCommissionPercentage}% descontada)`,
+          description: `Ingreso por consulta completada con ${consultation.clientName} (Comisión KABALY ${tarotistaProfile.customCommissionPercentage}% descontada)`,
           referenceId: consultation.id,
           timestamp: new Date().toISOString(),
           status: 'completed',
@@ -735,7 +735,7 @@ async function startServer() {
     const lower = (prompt || '').toLowerCase();
     if (lower.includes('suicidio') || lower.includes('matarme') || lower.includes('morir') || lower.includes('autolesion')) {
       return res.json({
-        response: 'Siento mucho que estés pasando por un momento de gran dolor. En ASTRALIS nos preocupamos profundamente por tu bienestar. Te pedimos con urgencia que busques apoyo profesional y humano inmediato. Puedes comunicarte gratis y confidencialmente con el Teléfono de la Esperanza llamando al 717 003 717 o al 024 (Línea de atención a la conducta suicida en España). Tu vida tiene un valor incalculable y no estás solo/a. ❤️',
+        response: 'Siento mucho que estés pasando por un momento de gran dolor. En KABALY nos preocupamos profundamente por tu bienestar. Te pedimos con urgencia que busques apoyo profesional y humano inmediato. Puedes comunicarte gratis y confidencialmente con el Teléfono de la Esperanza llamando al 717 003 717 o al 024 (Línea de atención a la conducta suicida en España). Tu vida tiene un valor incalculable y no estás solo/a. ❤️',
         isCrisis: true,
       });
     }
@@ -746,7 +746,7 @@ async function startServer() {
           model: 'gemini-3.6-flash',
           contents: prompt,
           config: {
-            systemInstruction: `Eres "Astra AI", la guía mística y asistente de sabiduría espiritual de ASTRALIS.
+            systemInstruction: `Eres "Kabaly AI", la guía mística y asistente de sabiduría espiritual de KABALY.
 Tu personalidad es serena, poética, elegante y reconfortante.
 Ofreces interpretaciones sobre el Tarot, significado de las cartas, orientación astrológica y horóscopos.
 REGLAS OBLIGATORIAS:
@@ -812,7 +812,7 @@ REGLAS OBLIGATORIAS:
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[ASTRALIS Server] Running on http://localhost:${PORT}`);
+    console.log(`[KABALY Server] Running on http://localhost:${PORT}`);
   });
 }
 

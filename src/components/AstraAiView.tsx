@@ -20,7 +20,7 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
     {
       id: '1',
       sender: 'ai',
-      text: 'Saludos estelares. Soy Astra AI, tu guía mística de iluminación y autoconocimiento. ¿Qué inquietud o velo del futuro deseas explorar hoy?',
+      text: 'Saludos estelares. Soy Kabaly AI, tu guía mística de iluminación y autoconocimiento. ¿Qué inquietud o velo del futuro deseas explorar hoy?',
     }
   ]);
   const [promptInput, setPromptInput] = useState('');
@@ -32,7 +32,7 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
     if (!finalPrompt.trim() || isLoading) return;
 
     if (dailyAiQueries >= 5) {
-      alert('Has alcanzado el límite gratuito de 5 consultas diarias con Astra AI. Para profundizaciones personalizadas, te recomendamos reservar una lectura 1:1 con nuestros profesionales verificados.');
+      alert('Has alcanzado el límite gratuito de 5 consultas diarias con Kabaly AI. Para profundizaciones personalizadas, te recomendamos reservar una lectura 1:1 con nuestros profesionales verificados.');
       return;
     }
 
@@ -94,7 +94,7 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
             <span className="material-symbols-outlined text-xl text-[#0B0911] filled">auto_awesome</span>
           </div>
           <div>
-            <h2 className="font-playfair text-lg font-bold text-[#D4AF37] text-gold-glow">Astra AI • Guía Mística</h2>
+            <h2 className="font-playfair text-lg font-bold text-[#D4AF37] text-gold-glow">Kabaly AI • Guía Mística</h2>
             <span className="text-[10px] text-[#A7A7A7] uppercase tracking-wider">Servidor IA Gemini 3.6 Flash</span>
           </div>
         </div>
@@ -141,7 +141,7 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
                 <span className="material-symbols-outlined text-xs">
                   {m.sender === 'user' ? 'person' : 'auto_awesome'}
                 </span>
-                <span>{m.sender === 'user' ? currentUser.name : 'Astra AI'}</span>
+                <span>{m.sender === 'user' ? currentUser.name : 'Kabaly AI'}</span>
               </div>
 
               <p className="whitespace-pre-wrap">{m.text}</p>

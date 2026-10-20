@@ -69,7 +69,7 @@ export async function initDatabase(): Promise<AppDatabaseState> {
 
     // Crear tabla de persistencia si no existe
     await connection.query(`
-      CREATE TABLE IF NOT EXISTS astralis_store (
+      CREATE TABLE IF NOT EXISTS kabaly_store (
         store_key VARCHAR(64) PRIMARY KEY,
         store_value LONGTEXT NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -93,7 +93,7 @@ async function loadStateFromDb(): Promise<AppDatabaseState> {
   if (!pool || !isConnected) return getFallbackState();
 
   try {
-    const [rows]: any = await pool.query('SELECT store_key, store_value FROM astralis_store');
+    const [rows]: any = await pool.query('SELECT store_key, store_value FROM kabaly_store');
     const dbMap = new Map<string, any>();
     
     for (const row of rows) {
@@ -137,7 +137,7 @@ export async function saveToDb(key: string, data: any): Promise<void> {
   try {
     const jsonStr = JSON.stringify(data);
     await pool.query(
-      `INSERT INTO astralis_store (store_key, store_value) 
+      `INSERT INTO kabaly_store (store_key, store_value) 
        VALUES (?, ?) 
        ON DUPLICATE KEY UPDATE store_value = VALUES(store_value)`,
       [key, jsonStr]
