@@ -26,6 +26,7 @@ import { UserProfileView } from './components/UserProfileView';
 import { AstraAiView } from './components/AstraAiView';
 import { AdminPanel } from './components/AdminPanel';
 import { AuthModal } from './components/AuthModal';
+import { AuthView } from './components/AuthView';
 import { SpendingLimitsModal } from './components/SpendingLimitsModal';
 import { BookConsultationModal } from './components/BookConsultationModal';
 
@@ -50,6 +51,7 @@ export const App: React.FC = () => {
 
   // Authenticated User State (Elimina la selección automática de usuarios demo)
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isGuestExploring, setIsGuestExploring] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showSpendingLimits, setShowSpendingLimits] = useState<boolean>(false);
   const [bookingTarotista, setBookingTarotista] = useState<TarotistaProfile | null>(null);
@@ -367,7 +369,10 @@ export const App: React.FC = () => {
           setSelectedTarotistaId(null);
         }}
         currentUser={currentUser}
-        onOpenAuthModal={() => setShowAuthModal(true)}
+        onOpenAuthModal={() => {
+          setIsGuestExploring(false);
+          setShowAuthModal(true);
+        }}
         onLogout={handleLogout}
         onOpenWallet={() => {
           if (!currentUser) {
@@ -411,11 +416,19 @@ export const App: React.FC = () => {
             }}
           />
         ) : (
-          /* VIEW 3: Main Tabs (Feed, Explore, Live, Astra AI, Profile/Wallet/Admin) */
-          <>
-            {activeTab === 'feed' && (
-              <FeedView
-                videos={videos}
+          /* VIEW 3: Main Tabs or Full Auth View */
+          !currentUser && !isGuestExploring ? (
+            <AuthView
+              onAuthSuccess={(user) => {
+                handleAuthSuccess(user);
+              }}
+              onExploreAsGuest={() => setIsGuestExploring(true)}
+            />
+          ) : (
+            <>
+              {activeTab === 'feed' && (
+                <FeedView
+                  videos={videos}
                 currentUser={currentUser}
                 tarotistaProfiles={tarotistaProfiles}
                 activeCategory={activeCategory}
@@ -596,6 +609,7 @@ export const App: React.FC = () => {
               )
             )}
           </>
+          )
         )}
       </div>
 
@@ -604,6 +618,7 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         onSelectTab={(tab) => {
           if (tab === 'profile' && !currentUser) {
+            setIsGuestExploring(false);
             setShowAuthModal(true);
             return;
           }

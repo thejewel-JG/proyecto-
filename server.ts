@@ -491,7 +491,7 @@ export async function startServer() {
     });
   } else {
     const numericPort = Number(PORT);
-    app.listen(numericPort, '0.0.0.0', () => {
+    app.listen(numericPort, () => {
       console.log(`[KABALY Server] Running on http://localhost:${numericPort}`);
     });
   }
@@ -500,7 +500,10 @@ export async function startServer() {
 // Iniciar automáticamente solo si se invoca directamente desde línea de comandos (npm run dev / tsx server.ts)
 const isDirectCli = process.argv[1] && (
   process.argv[1].endsWith('server.ts') || 
-  process.argv[1].endsWith('server.cjs')
+  process.argv[1].endsWith('server.cjs') ||
+  process.argv[1].endsWith('server.js') ||
+  process.argv[1].endsWith('app.js') ||
+  process.argv[1].endsWith('index.js')
 );
 
 if (isDirectCli && process.env.NODE_ENV !== 'test' && !process.env.TEST_RUN) {

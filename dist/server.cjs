@@ -47,7 +47,7 @@ var import_module = require("module");
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_promise = __toESM(require("mysql2/promise"), 1);
 var import_meta = {};
-var req = (0, import_module.createRequire)(import_meta.url);
+var req = typeof require !== "undefined" ? require : (0, import_module.createRequire)(import_meta.url);
 var sqliteConstructor = null;
 function getSqliteConstructor() {
   if (!sqliteConstructor) {
@@ -1402,12 +1402,12 @@ async function startServer() {
     });
   } else {
     const numericPort = Number(PORT);
-    app.listen(numericPort, "0.0.0.0", () => {
+    app.listen(numericPort, () => {
       console.log(`[KABALY Server] Running on http://localhost:${numericPort}`);
     });
   }
 }
-var isDirectCli = process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs"));
+var isDirectCli = process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs") || process.argv[1].endsWith("server.js") || process.argv[1].endsWith("app.js") || process.argv[1].endsWith("index.js"));
 if (isDirectCli && process.env.NODE_ENV !== "test" && !process.env.TEST_RUN) {
   startServer().catch((err) => {
     console.error("[FATAL SERVER ERROR]:", err);

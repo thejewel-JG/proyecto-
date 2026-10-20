@@ -4,7 +4,8 @@ import { createRequire } from 'module';
 import bcrypt from 'bcryptjs';
 import mysql from 'mysql2/promise';
 
-const req = createRequire(import.meta.url);
+// @ts-ignore
+const req = typeof require !== 'undefined' ? require : createRequire(import.meta.url);
 
 let sqliteConstructor: any = null;
 function getSqliteConstructor() {
