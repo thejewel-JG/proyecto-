@@ -8,10 +8,10 @@ import {
   LedgerTransaction, 
   Review, 
   Report, 
-  WithdrawalRequest,
-  CoinPackage,
-  Gift,
-  Category
+  WithdrawalRequest, 
+  CoinPackage, 
+  Gift, 
+  Category 
 } from './types';
 
 // Components
@@ -25,13 +25,12 @@ import { WalletView } from './components/WalletView';
 import { UserProfileView } from './components/UserProfileView';
 import { AstraAiView } from './components/AstraAiView';
 import { AdminPanel } from './components/AdminPanel';
-import { OnboardingModal } from './components/OnboardingModal';
+import { AuthModal } from './components/AuthModal';
 import { SpendingLimitsModal } from './components/SpendingLimitsModal';
 import { BookConsultationModal } from './components/BookConsultationModal';
 
 export const App: React.FC = () => {
   // App state
-  const [users, setUsers] = useState<User[]>([]);
   const [tarotistaProfiles, setTarotistaProfiles] = useState<TarotistaProfile[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [liveStreams, setLiveStreams] = useState<LiveStream[]>([]);
@@ -49,9 +48,9 @@ export const App: React.FC = () => {
   const [selectedTarotistaId, setSelectedTarotistaId] = useState<string | null>(null);
   const [activeConsultationId, setActiveConsultationId] = useState<string | null>(null);
 
-  // Active User State
-  const [currentUserId, setCurrentUserId] = useState<string>('usr_cliente_1');
-  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+  // Authenticated User State (Elimina la selección automática de usuarios demo)
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showSpendingLimits, setShowSpendingLimits] = useState<boolean>(false);
   const [bookingTarotista, setBookingTarotista] = useState<TarotistaProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -62,7 +61,9 @@ export const App: React.FC = () => {
     try {
       const res = await fetch('/api/state');
       const data = await res.json();
-      setUsers(data.users || []);
+      if (data.currentUser !== undefined) {
+        setCurrentUser(data.currentUser);
+      }
       setTarotistaProfiles(data.tarotistaProfiles || []);
       setVideos(data.videos || []);
       setLiveStreams(data.liveStreams || []);
@@ -82,45 +83,29 @@ export const App: React.FC = () => {
     fetchState();
   }, []);
 
-  const currentUser = users.find(u => u.id === currentUserId) || users[0] || {
-    id: 'usr_cliente_1',
-    name: 'Elena Pastor',
-    email: 'elena@gmail.com',
-    role: 'cliente',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-    coinsBalance: 1240,
-    isAgeVerified: true,
-    spentToday: 0,
-    spentThisWeek: 45,
-    createdAt: new Date().toISOString(),
+  const handleAuthSuccess = (user: User) => {
+    setCurrentUser(user);
+    fetchState();
   };
 
-  // Role switcher handler
-  const handleSwitchRole = (role: 'cliente' | 'tarotista' | 'admin') => {
-    if (role === 'admin') {
-      const admin = users.find(u => u.role === 'admin');
-      if (admin) setCurrentUserId(admin.id);
-      setActiveTab('profile');
-      setSelectedTarotistaId(null);
-      return;
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setCurrentUser(null);
+      setActiveTab('feed');
+      await fetchState();
+    } catch (e) {
+      console.error(e);
     }
-
-    if (role === 'tarotista') {
-      const tarotistaUser = users.find(u => u.role === 'tarotista');
-      if (tarotistaUser) {
-        setCurrentUserId(tarotistaUser.id);
-      } else {
-        setShowOnboarding(true);
-      }
-      return;
-    }
-
-    const clientUser = users.find(u => u.role === 'cliente');
-    if (clientUser) setCurrentUserId(clientUser.id);
   };
 
   // Video Actions
   const handleLikeVideo = async (videoId: string) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/videos/${videoId}/like`, { method: 'POST' });
       const data = await res.json();
@@ -133,11 +118,15 @@ export const App: React.FC = () => {
   };
 
   const handleUnlockVideo = async (videoId: string) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/videos/${videoId}/unlock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id }),
       });
       const data = await res.json();
       if (data.success) {
@@ -152,11 +141,16 @@ export const App: React.FC = () => {
 
   // Stream Actions
   const handleSendGift = async (streamId: string, giftId: string) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/streams/${streamId}/gift`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, giftId }),
+        body: JSON.stringify({ giftId }),
       });
       const data = await res.json();
       if (data.success) {
@@ -170,15 +164,23 @@ export const App: React.FC = () => {
   };
 
   const handleJoinQueue = async (streamId: string, durationMinutes: number, type: 'chat' | 'audio' | 'video') => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/streams/${streamId}/queue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, durationMinutes, consultationType: type }),
+        body: JSON.stringify({ durationMinutes, consultationType: type }),
       });
       const data = await res.json();
       if (data.success) {
         await fetchState();
+        alert(`¡Añadido a la cola celestial en posición #${data.position}!`);
+      } else if (data.error) {
+        alert(data.error);
       }
     } catch (err) {
       console.error(err);
@@ -186,26 +188,23 @@ export const App: React.FC = () => {
   };
 
   // Consultation Actions
-  const handleConfirmBooking = async (type: 'chat' | 'audio' | 'video', durationMinutes: number) => {
-    if (!bookingTarotista) return;
+  const handleBookConsultation = async (tarotistaId: string, duration: number, type: 'chat' | 'audio' | 'video') => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
 
     try {
-      const res = await fetch('/api/consultations/create', {
+      const res = await fetch('/api/consultations/book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId: currentUser.id,
-          tarotistaId: bookingTarotista.id,
-          type,
-          durationMinutes,
-        }),
+        body: JSON.stringify({ tarotistaId, duration, type }),
       });
-
       const data = await res.json();
       if (data.success) {
-        setBookingTarotista(null);
-        setActiveConsultationId(data.consultation.id);
         await fetchState();
+        setBookingTarotista(null);
+        alert(`¡Consulta solicitada con éxito! Estado: ${data.consultation.status}. Fondos retenidos de forma segura en Escrow.`);
       } else if (data.error) {
         alert(data.error);
       }
@@ -231,6 +230,11 @@ export const App: React.FC = () => {
   };
 
   const handleSubmitReview = async (consultationId: string, rating: number, comment: string) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       const res = await fetch('/api/reviews/create', {
         method: 'POST',
@@ -247,69 +251,35 @@ export const App: React.FC = () => {
     }
   };
 
-  // Wallet Actions
+  // Wallet Actions (Recarga de monedas bloqueada y protegida)
   const handleTopupCoins = async (packageId: string, paymentMethod: 'apple_pay' | 'stripe') => {
     try {
       const res = await fetch('/api/coins/topup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, packageId, paymentMethod }),
+        body: JSON.stringify({ packageId, paymentMethod }),
       });
       const data = await res.json();
-      if (data.success) {
-        await fetchState();
-        alert(`¡Recarga completada! Has recibido ${data.package.coins} Monedas Astrales en tu monedero.`);
+      if (!res.ok) {
+        alert(data.error || 'La pasarela de pago seguro aún no está disponible.');
       }
     } catch (err) {
-      console.error(err);
+      alert('La pasarela de pago seguro aún no está disponible.');
     }
   };
 
   const handleRequestWithdrawal = async (amountEur: number, vatNumber: string, bankIban: string) => {
-    const profile = tarotistaProfiles.find(p => p.userId === currentUser.id);
-    if (!profile) return;
-
+    if (!currentUser) return;
     try {
       const res = await fetch('/api/tarotistas/withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tarotistaProfileId: profile.id,
-          amountEur,
-          vatNumber,
-          bankIban,
-        }),
+        body: JSON.stringify({ amountEur, vatNumber, bankIban }),
       });
       const data = await res.json();
       if (data.success) {
         await fetchState();
-        alert('Solicitud de retiro y justificante fiscal procesados correctamente.');
-      } else if (data.error) {
-        alert(data.error);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleCreatePost = async (postData: {
-    title: string;
-    mediaUrl: string;
-    mediaType: 'video' | 'image';
-    category: Category;
-    isPremium: boolean;
-    priceCoins?: number;
-    description: string;
-  }) => {
-    try {
-      const res = await fetch('/api/posts/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, ...postData }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchState();
+        alert('Solicitud de retiro procesada correctamente.');
       } else if (data.error) {
         alert(data.error);
       }
@@ -319,15 +289,17 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateProfile = async (updatedData: { name: string; handle: string; bio: string; avatar: string; coverImage: string }) => {
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/users/update', {
+      const res = await fetch('/api/users/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, ...updatedData }),
+        body: JSON.stringify(updatedData),
       });
       const data = await res.json();
-      if (data.success) {
-        await fetchState();
+      if (data.success && data.user) {
+        setCurrentUser(data.user);
+        alert('Perfil actualizado correctamente.');
       } else if (data.error) {
         alert(data.error);
       }
@@ -369,34 +341,19 @@ export const App: React.FC = () => {
     }
   };
 
-  // Onboarding Complete
-  const handleOnboardingComplete = async (data: any) => {
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const result = await res.json();
-      if (result.success) {
-        setShowOnboarding(false);
-        await fetchState();
-        if (result.user) setCurrentUserId(result.user.id);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   // Filtered Tarotista Directory for Explore view
   const filteredTarotistas = tarotistaProfiles.filter(p => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    return p.professionalName.toLowerCase().includes(q) || p.specialties.some(s => s.toLowerCase().includes(q));
+    return (
+      p.professionalName.toLowerCase().includes(q) ||
+      p.specialties.some(s => s.toLowerCase().includes(q)) ||
+      p.bio.toLowerCase().includes(q)
+    );
   });
 
-  const activeStream = liveStreams[0];
   const selectedTarotista = tarotistaProfiles.find(p => p.id === selectedTarotistaId);
+  const activeStream = liveStreams[0] || null;
   const activeConsultation = consultations.find(c => c.id === activeConsultationId);
 
   return (
@@ -410,15 +367,22 @@ export const App: React.FC = () => {
           setSelectedTarotistaId(null);
         }}
         currentUser={currentUser}
-        onSwitchUserRole={handleSwitchRole}
+        onOpenAuthModal={() => setShowAuthModal(true)}
+        onLogout={handleLogout}
         onOpenWallet={() => {
+          if (!currentUser) {
+            setShowAuthModal(true);
+            return;
+          }
           setActiveTab('profile');
           setSelectedTarotistaId(null);
         }}
         onOpenSearch={() => setShowSearchModal(true)}
         onOpenAdmin={() => {
-          setActiveTab('profile');
-          setSelectedTarotistaId(null);
+          if (currentUser?.role === 'admin') {
+            setActiveTab('profile');
+            setSelectedTarotistaId(null);
+          }
         }}
       />
 
@@ -428,23 +392,23 @@ export const App: React.FC = () => {
         {activeConsultation ? (
           <ConsultationRoomView
             consultation={activeConsultation}
-            currentUser={currentUser}
-            tarotistaProfiles={tarotistaProfiles}
             onTransitionStatus={handleTransitionStatus}
             onSubmitReview={handleSubmitReview}
-            onBack={() => setActiveConsultationId(null)}
+            onClose={() => setActiveConsultationId(null)}
           />
         ) : selectedTarotista ? (
-          /* VIEW 2: Tarotista Profile Detail View */
+          /* VIEW 2: Tarotista Public Profile Detail */
           <TarotistaProfileView
             profile={selectedTarotista}
-            videos={videos}
-            reviews={reviews}
-            onBookConsultation={(tarotistaId) => {
-              const prof = tarotistaProfiles.find(p => p.id === tarotistaId);
-              if (prof) setBookingTarotista(prof);
-            }}
             onBack={() => setSelectedTarotistaId(null)}
+            onBookConsultation={(id) => {
+              if (!currentUser) {
+                setShowAuthModal(true);
+                return;
+              }
+              const tar = tarotistaProfiles.find(t => t.id === id);
+              if (tar) setBookingTarotista(tar);
+            }}
           />
         ) : (
           /* VIEW 3: Main Tabs (Feed, Explore, Live, Astra AI, Profile/Wallet/Admin) */
@@ -458,18 +422,29 @@ export const App: React.FC = () => {
                 onLikeVideo={handleLikeVideo}
                 onUnlockVideo={handleUnlockVideo}
                 onBookConsultation={(tarotistaId) => {
-                  const prof = tarotistaProfiles.find(p => p.id === tarotistaId);
-                  if (prof) setBookingTarotista(prof);
+                  if (!currentUser) {
+                    setShowAuthModal(true);
+                    return;
+                  }
+                  const tar = tarotistaProfiles.find(t => t.id === tarotistaId);
+                  if (tar) setBookingTarotista(tar);
                 }}
-                onViewTarotistaProfile={(id) => setSelectedTarotistaId(id)}
-                onOpenWallet={() => setActiveTab('profile')}
+                onViewTarotistaProfile={(tarotistaId) => setSelectedTarotistaId(tarotistaId)}
+                onOpenWallet={() => {
+                  if (!currentUser) {
+                    setShowAuthModal(true);
+                    return;
+                  }
+                  setActiveTab('profile');
+                }}
+                onOpenAuthModal={() => setShowAuthModal(true)}
               />
             )}
 
             {activeTab === 'explore' && (
-              <div className="w-full max-w-2xl mx-auto space-y-4">
-                <div className="flex items-center gap-2 bg-[#1A1026] border border-[#D4AF37]/30 rounded-full px-4 py-3">
-                  <span className="material-symbols-outlined text-[#D4AF37]">search</span>
+              <div className="space-y-6 max-w-2xl mx-auto pb-12">
+                <div className="bg-[#1A1026] border border-[#D4AF37]/30 rounded-full px-4 py-2.5 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#D4AF37] text-lg">search</span>
                   <input
                     type="text"
                     value={searchQuery}
@@ -493,16 +468,20 @@ export const App: React.FC = () => {
                     >
                       <img src={t.avatar} alt={t.professionalName} className="w-16 h-16 rounded-full object-cover border-2 border-[#D4AF37] group-hover:scale-105 transition-transform" />
                       <div className="flex-1">
-                        <h3 className="font-playfair text-base font-bold text-[#F7E7C1] flex items-center gap-1">
-                          {t.professionalName}
-                          <span className="material-symbols-outlined text-xs text-[#D4AF37] filled">verified</span>
-                        </h3>
-                        <p className="text-[10px] text-[#A7A7A7] line-clamp-1">{t.bio}</p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs font-bold text-[#D4AF37]">€{t.pricePerMinEur.toFixed(2)}/min</span>
-                          <span className="text-[10px] bg-[#5A2D82] text-[#D4AF37] px-2 py-0.5 rounded-full font-bold">
-                            ★ {t.ratingAverage.toFixed(1)}
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="font-playfair font-bold text-sm text-[#F7E7C1]">{t.professionalName}</h3>
+                          {t.isVerified && (
+                            <span className="material-symbols-outlined text-xs text-[#D4AF37] filled" title="Verificado">verified</span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-[#D4AF37]">{t.specialties.slice(0, 2).join(' • ')}</p>
+                        <div className="flex items-center gap-2 mt-2 text-[10px] text-[#A7A7A7]">
+                          <span className="flex items-center gap-0.5 text-[#D4AF37]">
+                            <span className="material-symbols-outlined text-xs filled">star</span>
+                            {t.ratingAverage}
                           </span>
+                          <span>({t.totalReviews} reseñas)</span>
+                          <span className="ml-auto font-bold text-[#F7E7C1]">{t.pricePerMinCoins} Mon/min</span>
                         </div>
                       </div>
                     </div>
@@ -514,39 +493,67 @@ export const App: React.FC = () => {
             {activeTab === 'live' && (
               <LiveStreamView
                 stream={activeStream}
-                currentUser={currentUser}
+                currentUser={currentUser || {
+                  id: 'anon',
+                  name: 'Invitado',
+                  email: '',
+                  role: 'cliente',
+                  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                  coinsBalance: 0,
+                  isAgeVerified: false,
+                  spentToday: 0,
+                  spentThisWeek: 0,
+                  createdAt: '',
+                }}
                 tarotistaProfiles={tarotistaProfiles}
                 gifts={gifts}
                 onSendGift={handleSendGift}
                 onJoinQueue={handleJoinQueue}
-                onBookConsultation={(tarotistaId) => {
-                  const prof = tarotistaProfiles.find(p => p.id === tarotistaId);
-                  if (prof) setBookingTarotista(prof);
+                onOpenWallet={() => {
+                  if (!currentUser) {
+                    setShowAuthModal(true);
+                    return;
+                  }
+                  setActiveTab('profile');
                 }}
-                onOpenWallet={() => setActiveTab('profile')}
               />
             )}
 
             {activeTab === 'astra_ai' && (
               <AstraAiView
-                currentUser={currentUser}
+                currentUser={currentUser || {
+                  id: 'anon',
+                  name: 'Invitado',
+                  email: '',
+                  role: 'cliente',
+                  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+                  coinsBalance: 0,
+                  isAgeVerified: false,
+                  spentToday: 0,
+                  spentThisWeek: 0,
+                  createdAt: '',
+                }}
                 tarotistaProfiles={tarotistaProfiles}
-                onBookConsultation={(tarotistaId) => {
-                  const prof = tarotistaProfiles.find(p => p.id === tarotistaId);
-                  if (prof) setBookingTarotista(prof);
+                onBookConsultation={(id) => {
+                  if (!currentUser) {
+                    setShowAuthModal(true);
+                    return;
+                  }
+                  const tar = tarotistaProfiles.find(t => t.id === id);
+                  if (tar) setBookingTarotista(tar);
                 }}
               />
             )}
 
             {activeTab === 'profile' && (
-              <>
-                {currentUser.role === 'admin' ? (
+              currentUser ? (
+                currentUser.role === 'admin' ? (
                   <AdminPanel
-                    currentUser={currentUser}
                     tarotistaProfiles={tarotistaProfiles}
                     consultations={consultations}
-                    reports={reports}
                     ledger={ledger}
+                    reports={reports}
+                    withdrawals={withdrawals}
                     onApproveTarotista={handleApproveTarotista}
                     onResolveDispute={handleResolveDispute}
                     onBack={() => setActiveTab('feed')}
@@ -554,61 +561,101 @@ export const App: React.FC = () => {
                 ) : (
                   <UserProfileView
                     currentUser={currentUser}
-                    videos={videos}
                     tarotistaProfiles={tarotistaProfiles}
-                    coinPackages={coinPackages}
-                    ledger={ledger}
-                    withdrawals={withdrawals}
-                    onTopup={handleTopupCoins}
-                    onRequestWithdrawal={handleRequestWithdrawal}
-                    onOpenSpendingLimits={() => setShowSpendingLimits(true)}
-                    onCreatePost={handleCreatePost}
+                    videos={videos}
+                    consultations={consultations}
+                    onSwitchUserRole={() => {}}
+                    onOpenAdmin={() => {}}
+                    onOpenWallet={() => {}}
+                    onOpenLimitsModal={() => setShowSpendingLimits(true)}
                     onUpdateProfile={handleUpdateProfile}
-                    onSwitchUserRole={handleSwitchRole}
+                    onCreatePost={async () => {}}
+                    onSelectVideo={(id) => {
+                      const v = videos.find(x => x.id === id);
+                      if (v) {
+                        setActiveCategory(v.category);
+                        setActiveTab('feed');
+                      }
+                    }}
                   />
-                )}
-              </>
+                )
+              ) : (
+                <div className="glass-card max-w-md mx-auto p-8 rounded-3xl border border-[#D4AF37]/30 text-center space-y-4 my-12">
+                  <span className="material-symbols-outlined text-5xl text-[#D4AF37] gold-glow">lock</span>
+                  <h3 className="font-cinzel text-xl font-bold text-[#F7E7C1]">Acceso a Perfil y Monedero</h3>
+                  <p className="text-xs text-[#A7A7A7] leading-relaxed">
+                    Inicia sesión o crea tu cuenta para acceder a tus consultas privadas, historial de saldo, recargas y configuración personal.
+                  </p>
+                  <button
+                    onClick={() => setShowAuthModal(true)}
+                    className="w-full bg-[#D4AF37] text-[#0B0911] font-bold py-3 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-105 transition-all"
+                  >
+                    Iniciar Sesión o Registrarse
+                  </button>
+                </div>
+              )
             )}
           </>
         )}
       </div>
 
-      {/* Fixed Mobile Bottom Navigation */}
+      {/* Bottom Navigation */}
       <BottomNav
         activeTab={activeTab}
         onSelectTab={(tab) => {
-          setActiveTab(tab);
+          if (tab === 'profile' && !currentUser) {
+            setShowAuthModal(true);
+            return;
+          }
           setSelectedTarotistaId(null);
           setActiveConsultationId(null);
+          setActiveTab(tab);
         }}
-        hasActiveLiveStream={liveStreams.some(s => s.isLive)}
+        hasActiveLiveStream={!!activeStream}
       />
 
-      {/* Modals */}
-      {showOnboarding && (
-        <OnboardingModal onComplete={handleOnboardingComplete} />
-      )}
+      {/* Modal: Autenticación Real (Login / Registro) */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
 
-      {showSpendingLimits && (
+      {/* Modal: Límites de Gasto Responsable */}
+      {showSpendingLimits && currentUser && (
         <SpendingLimitsModal
           currentUser={currentUser}
-          onSaveLimits={(daily, weekly) => {
-            currentUser.spendingLimitDaily = daily;
-            currentUser.spendingLimitWeekly = weekly;
-            alert('Límites de gasto guardados correctamente.');
-          }}
           onClose={() => setShowSpendingLimits(false)}
+          onUpdateLimits={async (daily, weekly) => {
+            setShowSpendingLimits(false);
+          }}
         />
       )}
 
+      {/* Modal: Reservar Consulta 1:1 */}
       {bookingTarotista && (
         <BookConsultationModal
           tarotista={bookingTarotista}
-          currentUser={currentUser}
-          onConfirmBooking={handleConfirmBooking}
+          currentUser={currentUser || {
+            id: 'anon',
+            name: 'Invitado',
+            email: '',
+            role: 'cliente',
+            avatar: '',
+            coinsBalance: 0,
+            isAgeVerified: false,
+            spentToday: 0,
+            spentThisWeek: 0,
+            createdAt: '',
+          }}
           onClose={() => setBookingTarotista(null)}
+          onConfirmBooking={handleBookConsultation}
           onOpenWallet={() => {
             setBookingTarotista(null);
+            if (!currentUser) {
+              setShowAuthModal(true);
+              return;
+            }
             setActiveTab('profile');
           }}
         />

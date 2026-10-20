@@ -3,7 +3,7 @@ import { Video, User, TarotistaProfile, Category } from '../types';
 
 interface FeedViewProps {
   videos: Video[];
-  currentUser: User;
+  currentUser: User | null;
   tarotistaProfiles: TarotistaProfile[];
   activeCategory?: Category;
   onLikeVideo: (videoId: string) => void;
@@ -11,6 +11,7 @@ interface FeedViewProps {
   onBookConsultation: (tarotistaId: string) => void;
   onViewTarotistaProfile: (tarotistaId: string) => void;
   onOpenWallet: () => void;
+  onOpenAuthModal?: () => void;
 }
 
 export const FeedView: React.FC<FeedViewProps> = ({
@@ -23,6 +24,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onBookConsultation,
   onViewTarotistaProfile,
   onOpenWallet,
+  onOpenAuthModal,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -33,7 +35,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
     if (activeCategory === 'Siguiendo') {
       // Show verified featured creators or videos from followed creators
-      return videos.filter(v => v.isVerified || (currentUser.followingIds && currentUser.followingIds.includes(v.tarotistaId)));
+      return videos.filter(v => v.isVerified || (currentUser?.followingIds && currentUser.followingIds.includes(v.tarotistaId)));
     }
     const matches = videos.filter(v => v.category === activeCategory);
     return matches.length > 0 ? matches : videos;
@@ -100,6 +102,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCommentText.trim()) return;
+    if (!currentUser) {
+      if (onOpenAuthModal) onOpenAuthModal();
+      return;
+    }
     setComments([
       { name: currentUser.name, text: newCommentText.trim(), time: 'Ahora' },
       ...comments,
@@ -107,7 +113,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     setNewCommentText('');
   };
 
-  const isUnlocked = !currentVideo.isPremium || (currentVideo.unlockedByUserIds && currentVideo.unlockedByUserIds.includes(currentUser.id));
+  const isUnlocked = !currentVideo.isPremium || (currentUser && currentVideo.unlockedByUserIds && currentVideo.unlockedByUserIds.includes(currentUser.id));
 
   const profile = tarotistaProfiles.find(p => p.id === currentVideo?.tarotistaId);
 

@@ -96,7 +96,7 @@ export const initialUsers: User[] = [
   {
     id: 'usr_tarotista_1',
     name: 'Luna Mística',
-    email: 'lunamistica@astralis.app',
+    email: 'lunamistica@kabaly.app',
     role: 'tarotista',
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
     coinsBalance: 4850,
@@ -108,7 +108,7 @@ export const initialUsers: User[] = [
   {
     id: 'usr_tarotista_2',
     name: 'Astro Maestro',
-    email: 'astromaestro@astralis.app',
+    email: 'astromaestro@kabaly.app',
     role: 'tarotista',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
     coinsBalance: 2300,
@@ -120,7 +120,7 @@ export const initialUsers: User[] = [
   {
     id: 'usr_tarotista_3',
     name: 'Sol de Oriente',
-    email: 'soloriente@astralis.app',
+    email: 'soloriente@kabaly.app',
     role: 'tarotista',
     avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200',
     coinsBalance: 1100,
