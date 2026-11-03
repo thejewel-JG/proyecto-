@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Comment, User } from '../types';
+import { SacredFlameIcon, CrystalBallIcon } from './EsotericIcons';
 
 interface CommentsDrawerProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface CommentsDrawerProps {
   onClose: () => void;
   onOpenAuthModal: () => void;
   onCommentCountChange?: (newCount: number) => void;
+  onOpenUserProfile?: (userId: string) => void;
 }
 
 export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
@@ -17,6 +19,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
   onClose,
   onOpenAuthModal,
   onCommentCountChange,
+  onOpenUserProfile,
 }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -83,16 +86,46 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
         throw new Error(data.error || 'Fallo al publicar comentario.');
       }
 
-      // Limpiar texto solo tras éxito
       setText('');
       setReplyingTo(null);
-
-      // Recargar comentarios completos
       await fetchComments();
     } catch (err: any) {
       setSubmitError(err.message || 'Error al enviar comentario. Conservamos tu texto.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleLikeComment = async (commentId: string) => {
+    if (!currentUser) {
+      onOpenAuthModal();
+      return;
+    }
+    try {
+      const res = await fetch(`/api/comments/${encodeURIComponent(commentId)}/like`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments(prev =>
+          prev.map(c => {
+            if (c.id === commentId) {
+              return { ...c, likesCount: data.likesCount, isLikedByCurrentUser: data.isLiked };
+            }
+            if (c.replies) {
+              return {
+                ...c,
+                replies: c.replies.map(r =>
+                  r.id === commentId ? { ...r, likesCount: data.likesCount, isLikedByCurrentUser: data.isLiked } : r
+                ),
+              };
+            }
+            return c;
+          })
+        );
+      }
+    } catch {
+      // Silencioso
     }
   };
 
@@ -128,18 +161,18 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
 
   return (
     <div className="absolute inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-xl flex flex-col justify-end animate-in slide-in-from-bottom duration-300">
-      <div className="bg-[#1A1026] border-t-2 border-[#D4AF37]/40 rounded-t-3xl p-4 sm:p-6 h-[80%] max-h-[600px] flex flex-col justify-between shadow-2xl">
+      <div className="bg-[#140D21] border-t border-[#D4AF37]/35 rounded-t-3xl p-4 sm:p-5 h-[80%] max-h-[600px] flex flex-col justify-between shadow-2xl">
         {/* Header */}
-        <div className="flex justify-between items-center pb-3 border-b border-[#D4AF37]/20">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#D4AF37] text-lg">chat</span>
-            <span className="font-cinzel text-sm text-[#F7E7C1] font-bold">Comentarios Cósmicos</span>
+        <div className="flex justify-between items-center pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2 text-[#D4AF37]">
+            <CrystalBallIcon className="w-5 h-5" filled />
+            <span className="font-cinzel text-sm text-[#F7E7C1] font-bold">Oráculo de Comentarios</span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-full text-[#A7A7A7] hover:text-[#F7E7C1] hover:bg-[#5A2D82]/30 transition-colors"
+            className="w-7 h-7 rounded-full text-[#F7E7C1]/60 hover:text-[#F7E7C1] hover:bg-white/10 flex items-center justify-center transition-colors"
           >
-            <span className="material-symbols-outlined text-xl">close</span>
+            ✕
           </button>
         </div>
 
@@ -162,12 +195,12 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
             </div>
           ) : comments.length === 0 ? (
             <div className="text-center py-12 space-y-2">
-              <div className="w-12 h-12 rounded-full bg-[#5A2D82]/30 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37]">
-                <span className="material-symbols-outlined text-2xl">forum</span>
+              <div className="w-12 h-12 rounded-full bg-[#2E1B47]/40 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37]">
+                <CrystalBallIcon className="w-6 h-6" />
               </div>
               <h4 className="font-cinzel text-xs font-bold text-[#F7E7C1]">Sé el primero en manifestarte</h4>
               <p className="text-[11px] text-[#A7A7A7] max-w-xs mx-auto">
-                Comparte tu intuición, bendición o reflexión espiritual sobre esta publicación.
+                Comparte tu intuición, bendición o reflexión espiritual sobre esta visión.
               </p>
             </div>
           ) : (
@@ -178,21 +211,52 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                   <img
                     src={comment.authorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'}
                     alt={comment.authorName}
-                    className="w-8 h-8 rounded-full object-cover border border-[#D4AF37]/40 flex-shrink-0"
+                    onClick={() => {
+                      if (onOpenUserProfile) {
+                        onClose();
+                        onOpenUserProfile(comment.authorId);
+                      }
+                    }}
+                    className="w-8 h-8 rounded-full object-cover border border-[#D4AF37]/40 flex-shrink-0 cursor-pointer hover:scale-105 transition"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="bg-[#0B0911]/60 border border-[#D4AF37]/15 rounded-2xl p-2.5 text-xs">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-bold text-[#D4AF37] text-[11px] truncate">
-                          {comment.authorName}
-                        </span>
-                        <span className="text-[9px] text-[#7A7280]">
-                          {new Date(comment.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                        </span>
+                    <div className="bg-[#0B0911]/70 border border-white/10 rounded-2xl p-2.5 text-xs flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span
+                            onClick={() => {
+                              if (onOpenUserProfile) {
+                                onClose();
+                                onOpenUserProfile(comment.authorId);
+                              }
+                            }}
+                            className="font-bold text-[#D4AF37] text-[11px] truncate cursor-pointer hover:underline"
+                          >
+                            {comment.authorName}
+                          </span>
+                          <span className="text-[9px] text-[#7A7280]">
+                            {new Date(comment.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                          </span>
+                        </div>
+                        <p className={`text-[11px] leading-relaxed break-words ${comment.isDeleted ? 'italic text-[#7A7280]' : 'text-[#F7E7C1]'}`}>
+                          {comment.content}
+                        </p>
                       </div>
-                      <p className={`text-[11px] leading-relaxed break-words ${comment.isDeleted ? 'italic text-[#7A7280]' : 'text-[#F7E7C1]'}`}>
-                        {comment.content}
-                      </p>
+
+                      {!comment.isDeleted && (
+                        <button
+                          onClick={() => handleToggleLikeComment(comment.id)}
+                          className={`flex flex-col items-center shrink-0 pt-0.5 transition ${
+                            comment.isLikedByCurrentUser ? 'text-[#D4AF37] esoteric-glow' : 'text-[#F7E7C1]/45 hover:text-[#D4AF37]'
+                          }`}
+                          title="Resonar con este comentario"
+                        >
+                          <SacredFlameIcon className="w-4 h-4" filled={!!comment.isLikedByCurrentUser} />
+                          {(comment.likesCount || 0) > 0 && (
+                            <span className="text-[9px] font-bold">{comment.likesCount}</span>
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-3 mt-1 ml-2 text-[10px] text-[#A7A7A7]">
@@ -201,8 +265,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                           onClick={() => handleStartReply(comment)}
                           className="hover:text-[#D4AF37] font-semibold transition-colors flex items-center gap-0.5"
                         >
-                          <span className="material-symbols-outlined text-xs">reply</span>
-                          Responder
+                          <span>✦ Responder</span>
                         </button>
                       )}
                       {(currentUser?.id === comment.authorId || currentUser?.role === 'admin') && !comment.isDeleted && (
@@ -210,8 +273,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                           onClick={() => handleDelete(comment.id)}
                           className="hover:text-red-400 transition-colors flex items-center gap-0.5 text-red-400/80"
                         >
-                          <span className="material-symbols-outlined text-xs">delete</span>
-                          Borrar
+                          <span>Borrar</span>
                         </button>
                       )}
                     </div>
@@ -220,27 +282,55 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
 
                 {/* Respuestas anidadas (1 nivel) */}
                 {comment.replies && comment.replies.length > 0 && (
-                  <div className="ml-10 space-y-2 border-l-2 border-[#D4AF37]/20 pl-3">
+                  <div className="ml-10 space-y-2 border-l border-[#D4AF37]/25 pl-3">
                     {comment.replies.map((reply) => (
                       <div key={reply.id} className="flex items-start gap-2 group">
                         <img
                           src={reply.authorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'}
                           alt={reply.authorName}
-                          className="w-6 h-6 rounded-full object-cover border border-[#D4AF37]/30 flex-shrink-0"
+                          onClick={() => {
+                            if (onOpenUserProfile) {
+                              onClose();
+                              onOpenUserProfile(reply.authorId);
+                            }
+                          }}
+                          className="w-6 h-6 rounded-full object-cover border border-[#D4AF37]/30 flex-shrink-0 cursor-pointer"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="bg-[#0B0911]/40 border border-[#D4AF37]/10 rounded-xl p-2 text-xs">
-                            <div className="flex justify-between items-center mb-0.5">
-                              <span className="font-bold text-[#D4AF37] text-[10px] truncate">
-                                {reply.authorName}
-                              </span>
-                              <span className="text-[8px] text-[#7A7280]">
-                                {new Date(reply.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                              </span>
+                          <div className="bg-[#0B0911]/50 border border-white/5 rounded-xl p-2 text-xs flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span
+                                  onClick={() => {
+                                    if (onOpenUserProfile) {
+                                      onClose();
+                                      onOpenUserProfile(reply.authorId);
+                                    }
+                                  }}
+                                  className="font-bold text-[#D4AF37] text-[10px] truncate cursor-pointer hover:underline"
+                                >
+                                  {reply.authorName}
+                                </span>
+                                <span className="text-[8px] text-[#7A7280]">
+                                  {new Date(reply.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-[#cec3d1] leading-relaxed break-words">
+                                {reply.content}
+                              </p>
                             </div>
-                            <p className="text-[10px] text-[#cec3d1] leading-relaxed break-words">
-                              {reply.content}
-                            </p>
+
+                            <button
+                              onClick={() => handleToggleLikeComment(reply.id)}
+                              className={`flex flex-col items-center shrink-0 transition ${
+                                reply.isLikedByCurrentUser ? 'text-[#D4AF37]' : 'text-[#F7E7C1]/40 hover:text-[#D4AF37]'
+                              }`}
+                            >
+                              <SacredFlameIcon className="w-3.5 h-3.5" filled={!!reply.isLikedByCurrentUser} />
+                              {(reply.likesCount || 0) > 0 && (
+                                <span className="text-[8px] font-bold">{reply.likesCount}</span>
+                              )}
+                            </button>
                           </div>
 
                           {(currentUser?.id === reply.authorId || currentUser?.role === 'admin') && (
@@ -248,7 +338,6 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                               onClick={() => handleDelete(reply.id)}
                               className="hover:text-red-400 transition-colors flex items-center gap-0.5 text-[9px] text-red-400/70 ml-2 mt-0.5"
                             >
-                              <span className="material-symbols-outlined text-[10px]">delete</span>
                               Borrar
                             </button>
                           )}
@@ -263,12 +352,12 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
         </div>
 
         {/* Input & Formulario inferior */}
-        <div className="pt-2 border-t border-[#D4AF37]/20">
+        <div className="pt-2 border-t border-white/10">
           {replyingTo && (
-            <div className="flex justify-between items-center bg-[#5A2D82]/40 border border-[#D4AF37]/30 px-3 py-1 rounded-full mb-2 text-[10px] text-[#D4AF37]">
+            <div className="flex justify-between items-center bg-[#2E1B47]/60 border border-[#D4AF37]/30 px-3 py-1 rounded-full mb-2 text-[10px] text-[#D4AF37]">
               <span>Respondiendo a <strong>@{replyingTo.authorName}</strong></span>
               <button onClick={() => setReplyingTo(null)} className="hover:text-white">
-                <span className="material-symbols-outlined text-xs">close</span>
+                ✕
               </button>
             </div>
           )}
@@ -284,7 +373,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                   ref={inputRef}
                   value={text}
                   onChange={(e) => setText(e.target.value.slice(0, 500))}
-                  placeholder={replyingTo ? `Escribe tu respuesta a @${replyingTo.authorName}...` : 'Escribe tu comentario sagrado...'}
+                  placeholder={replyingTo ? `Escribe tu respuesta a @${replyingTo.authorName}...` : 'Deja tu visión en el oráculo...'}
                   rows={2}
                   maxLength={500}
                   className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-2xl px-3 py-2 text-xs text-[#F7E7C1] placeholder:text-[#7A7280] outline-none focus:border-[#D4AF37] transition-all resize-none"
@@ -296,10 +385,10 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting || !text.trim()}
-                className="bg-[#D4AF37] text-[#0B0911] p-3 rounded-full hover:scale-105 active:scale-95 transition-all disabled:opacity-40 disabled:hover:scale-100 flex-shrink-0 gold-glow"
+                className="bg-[#D4AF37] text-[#0B0911] px-4 py-3 rounded-2xl font-bold text-xs hover:scale-105 active:scale-95 transition-all disabled:opacity-40 disabled:hover:scale-100 flex-shrink-0 gold-glow"
                 title="Publicar comentario"
               >
-                <span className="material-symbols-outlined text-base font-bold">send</span>
+                ✦
               </button>
             </form>
           ) : (

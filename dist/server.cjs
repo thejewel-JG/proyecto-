@@ -863,6 +863,80 @@ async function runMigrations(db) {
     `, ["007_phase9_gifts_and_unlocks", (/* @__PURE__ */ new Date()).toISOString()]);
     console.log("[Database] Migraci\xF3n 007_phase9_gifts_and_unlocks completada.");
   }
+  if (!appliedSet.has("008_phase10_social_network_complete")) {
+    console.log("[Database] Aplicando migraci\xF3n: 008_phase10_social_network_complete...");
+    const safeAddColumn = async (table, colDef) => {
+      try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+      } catch (e) {
+      }
+    };
+    await safeAddColumn("users", "sun_sign VARCHAR(32) DEFAULT NULL");
+    await safeAddColumn("users", "moon_sign VARCHAR(32) DEFAULT NULL");
+    await safeAddColumn("users", "rising_sign VARCHAR(32) DEFAULT NULL");
+    await safeAddColumn("users", "ruling_arcana VARCHAR(64) DEFAULT NULL");
+    await safeAddColumn("users", "spiritual_gift VARCHAR(64) DEFAULT NULL");
+    await safeAddColumn("users", "is_private INT NOT NULL DEFAULT 0");
+    await safeAddColumn("videos", "is_pinned INT NOT NULL DEFAULT 0");
+    await safeAddColumn("videos", "media_urls TEXT DEFAULT NULL");
+    await safeAddColumn("comments", "likes_count INT NOT NULL DEFAULT 0");
+    await safeAddColumn("comments", "is_pinned INT NOT NULL DEFAULT 0");
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        actor_id VARCHAR(64) NOT NULL,
+        actor_name VARCHAR(255) NOT NULL,
+        actor_avatar TEXT,
+        type VARCHAR(32) NOT NULL,
+        reference_id VARCHAR(64),
+        message TEXT NOT NULL,
+        is_read INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+      );
+    `);
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS profile_highlights (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        title VARCHAR(64) NOT NULL,
+        cover_url TEXT NOT NULL,
+        media_url TEXT NOT NULL,
+        media_type VARCHAR(16) NOT NULL DEFAULT 'image',
+        created_at DATETIME NOT NULL
+      );
+    `);
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS comment_likes (
+        id VARCHAR(64) PRIMARY KEY,
+        comment_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(comment_id, user_id)
+      );
+    `);
+    try {
+      await db.run("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)");
+      await db.run("CREATE INDEX IF NOT EXISTS idx_highlights_user ON profile_highlights(user_id)");
+      await db.run("CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)");
+    } catch (e) {
+    }
+    try {
+      await db.run(`
+        UPDATE users SET sun_sign = 'Escorpio', moon_sign = 'Piscis', rising_sign = 'Acuario', ruling_arcana = 'XVIII \u2022 La Luna', spiritual_gift = 'Videncia Lunar'
+        WHERE id = 'usr_tarotista_1' AND sun_sign IS NULL
+      `);
+      await db.run(`
+        UPDATE users SET sun_sign = 'Leo', moon_sign = 'Sagitario', rising_sign = 'Aries', ruling_arcana = 'XIX \u2022 El Sol', spiritual_gift = 'Astrolog\xEDa K\xE1rmica'
+        WHERE id = 'usr_tarotista_2' AND sun_sign IS NULL
+      `);
+    } catch (e) {
+    }
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ["008_phase10_social_network_complete", (/* @__PURE__ */ new Date()).toISOString()]);
+    console.log("[Database] Migraci\xF3n 008_phase10_social_network_complete completada.");
+  }
 }
 var import_path, import_module, import_bcryptjs, import_promise, req, sqliteConstructor, SqliteDatabase, MysqlDatabase, dbInstance, lastDbError;
 var init_database = __esm({
@@ -1897,6 +1971,12 @@ async function loginUser(params) {
     coverImage: row.cover_image,
     handle: row.handle,
     bio: row.bio,
+    sunSign: row.sun_sign || void 0,
+    moonSign: row.moon_sign || void 0,
+    risingSign: row.rising_sign || void 0,
+    rulingArcana: row.ruling_arcana || void 0,
+    spiritualGift: row.spiritual_gift || void 0,
+    isPrivate: !!row.is_private,
     coinsBalance: row.coins_balance,
     purchasedCoinsBalance: row.purchased_coins_balance || 0,
     earningsCoinsBalance: row.earnings_coins_balance || 0,
@@ -1958,6 +2038,12 @@ async function getSessionUser(sessionToken) {
     coverImage: row.cover_image,
     handle: row.handle,
     bio: row.bio,
+    sunSign: row.sun_sign || void 0,
+    moonSign: row.moon_sign || void 0,
+    risingSign: row.rising_sign || void 0,
+    rulingArcana: row.ruling_arcana || void 0,
+    spiritualGift: row.spiritual_gift || void 0,
+    isPrivate: !!row.is_private,
     coinsBalance: row.coins_balance,
     purchasedCoinsBalance: row.purchased_coins_balance || 0,
     earningsCoinsBalance: row.earnings_coins_balance || 0,
@@ -2060,6 +2146,8 @@ function mapVideoRow(r) {
     priceCoins: r.price_coins,
     unlockedByUserIds: [],
     mediaType: r.media_type || "video",
+    mediaUrls: r.media_urls ? parseJson(r.media_urls, void 0) : void 0,
+    isPinned: !!r.is_pinned,
     description: r.description || "",
     isWithdrawn: !!r.is_withdrawn,
     withdrawnAt: r.withdrawn_at || void 0,
@@ -2439,7 +2527,7 @@ function parseJson(str, fallback) {
 }
 async function addPostLike(videoId, userId) {
   const db = await getDb();
-  const post = await db.get("SELECT id, is_deleted FROM videos WHERE id = ?", [videoId]);
+  const post = await db.get("SELECT id, tarotista_id, title, is_deleted FROM videos WHERE id = ?", [videoId]);
   if (!post || post.is_deleted) {
     throw { status: 404, message: "Publicaci\xF3n no encontrada o retirada." };
   }
@@ -2452,6 +2540,21 @@ async function addPostLike(videoId, userId) {
       userId,
       (/* @__PURE__ */ new Date()).toISOString()
     ]);
+    if (post.tarotista_id && post.tarotista_id !== userId) {
+      const actor = await db.get("SELECT name, avatar FROM users WHERE id = ?", [userId]);
+      if (actor) {
+        await createNotification({
+          userId: post.tarotista_id,
+          actorId: userId,
+          actorName: actor.name,
+          actorAvatar: actor.avatar || "",
+          type: "like",
+          referenceId: videoId,
+          message: `ha resonado con tu visi\xF3n \xAB${(post.title || "").slice(0, 40)}\xBB`
+        }).catch(() => {
+        });
+      }
+    }
   }
   const countRow = await db.get("SELECT COUNT(*) as cnt FROM post_likes WHERE video_id = ?", [videoId]);
   const likesCount = countRow ? countRow.cnt : 0;
@@ -2475,7 +2578,7 @@ function sanitizeCommentContent(raw) {
 }
 async function createComment(params) {
   const db = await getDb();
-  const post = await db.get("SELECT id, is_deleted FROM videos WHERE id = ?", [params.videoId]);
+  const post = await db.get("SELECT id, tarotista_id, title, is_deleted FROM videos WHERE id = ?", [params.videoId]);
   if (!post || post.is_deleted) {
     throw { status: 404, message: "La publicaci\xF3n no est\xE1 disponible para comentar." };
   }
@@ -2484,12 +2587,14 @@ async function createComment(params) {
     throw { status: 400, message: "El comentario debe tener entre 1 y 500 caracteres." };
   }
   let finalParentId = null;
+  let parentAuthorId = null;
   if (params.parentId) {
-    const parent = await db.get("SELECT id, video_id, parent_id FROM comments WHERE id = ?", [params.parentId]);
+    const parent = await db.get("SELECT id, video_id, parent_id, author_id FROM comments WHERE id = ?", [params.parentId]);
     if (!parent || parent.video_id !== params.videoId) {
       throw { status: 400, message: "El comentario al que intentas responder no existe." };
     }
     finalParentId = parent.parent_id ? parent.parent_id : parent.id;
+    parentAuthorId = parent.author_id;
   }
   const commentId = `cmt_${Date.now()}_${import_crypto2.default.randomBytes(4).toString("hex")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -2510,6 +2615,29 @@ async function createComment(params) {
   const countRow = await db.get("SELECT COUNT(*) as cnt FROM comments WHERE video_id = ? AND is_deleted = 0", [params.videoId]);
   const commentsCount = countRow ? countRow.cnt : 0;
   await db.run("UPDATE videos SET comments_count = ? WHERE id = ?", [commentsCount, params.videoId]);
+  if (parentAuthorId && parentAuthorId !== params.authorId) {
+    await createNotification({
+      userId: parentAuthorId,
+      actorId: params.authorId,
+      actorName: params.authorName,
+      actorAvatar: params.authorAvatar || "",
+      type: "reply",
+      referenceId: params.videoId,
+      message: `respondi\xF3 a tu susurro: \xAB${cleanContent.slice(0, 45)}\xBB`
+    }).catch(() => {
+    });
+  } else if (post.tarotista_id && post.tarotista_id !== params.authorId) {
+    await createNotification({
+      userId: post.tarotista_id,
+      actorId: params.authorId,
+      actorName: params.authorName,
+      actorAvatar: params.authorAvatar || "",
+      type: "comment",
+      referenceId: params.videoId,
+      message: `dej\xF3 una visi\xF3n en tu or\xE1culo: \xAB${cleanContent.slice(0, 45)}\xBB`
+    }).catch(() => {
+    });
+  }
   return {
     id: commentId,
     videoId: params.videoId,
@@ -2518,18 +2646,31 @@ async function createComment(params) {
     authorAvatar: params.authorAvatar || "",
     parentId: finalParentId,
     content: cleanContent,
+    likesCount: 0,
+    isLikedByCurrentUser: false,
+    isPinned: false,
     isDeleted: false,
     createdAt: now,
     replies: []
   };
 }
-async function getPostComments(videoId) {
+async function getPostComments(videoId, currentUserId) {
   const db = await getDb();
   const rows = await db.query(`
     SELECT * FROM comments
     WHERE video_id = ?
-    ORDER BY created_at ASC
+    ORDER BY COALESCE(is_pinned, 0) DESC, created_at ASC
   `, [videoId]);
+  let likedCommentIds = /* @__PURE__ */ new Set();
+  if (currentUserId && rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const placeholders = ids.map(() => "?").join(",");
+    const likedRows = await db.query(
+      `SELECT comment_id FROM comment_likes WHERE user_id = ? AND comment_id IN (${placeholders})`,
+      [currentUserId, ...ids]
+    );
+    likedCommentIds = new Set(likedRows.map((r) => r.comment_id));
+  }
   const activeCount = rows.filter((r) => !r.is_deleted).length;
   const rootComments = [];
   const repliesMap = /* @__PURE__ */ new Map();
@@ -2547,6 +2688,9 @@ async function getPostComments(videoId) {
           authorAvatar: r.author_avatar || "",
           parentId: r.parent_id,
           content: r.content,
+          likesCount: r.likes_count || 0,
+          isLikedByCurrentUser: likedCommentIds.has(r.id),
+          isPinned: !!r.is_pinned,
           isDeleted: false,
           createdAt: r.created_at
         });
@@ -2567,6 +2711,9 @@ async function getPostComments(videoId) {
         authorAvatar: r.author_avatar || "",
         parentId: null,
         content: r.is_deleted ? "[Comentario eliminado por el autor]" : r.content,
+        likesCount: r.likes_count || 0,
+        isLikedByCurrentUser: likedCommentIds.has(r.id),
+        isPinned: !!r.is_pinned,
         isDeleted: !!r.is_deleted,
         createdAt: r.created_at,
         replies
@@ -2618,6 +2765,19 @@ async function followUser(followerId, followingId) {
       followingId,
       (/* @__PURE__ */ new Date()).toISOString()
     ]);
+    const actor = await db.get("SELECT name, avatar FROM users WHERE id = ?", [followerId]);
+    if (actor) {
+      await createNotification({
+        userId: followingId,
+        actorId: followerId,
+        actorName: actor.name,
+        actorAvatar: actor.avatar || "",
+        type: "follow",
+        referenceId: followerId,
+        message: "se ha unido a tu c\xEDrculo astral (ahora te sigue)"
+      }).catch(() => {
+      });
+    }
   }
   const rel = await getUserRelationship(followingId, followerId);
   await db.run("UPDATE tarotista_profiles SET followers_count = ? WHERE user_id = ? OR id = ?", [
@@ -3393,6 +3553,310 @@ async function getTotalUnreadMessagesCount(userId) {
     [userId]
   );
   return row ? row.cnt : 0;
+}
+async function createNotification(params) {
+  if (!params.userId || params.userId === params.actorId) return;
+  const db = await getDb();
+  const id = `not_${Date.now()}_${import_crypto2.default.randomBytes(4).toString("hex")}`;
+  await db.run(
+    `INSERT INTO notifications (id, user_id, actor_id, actor_name, actor_avatar, type, reference_id, message, is_read, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    [
+      id,
+      params.userId,
+      params.actorId,
+      params.actorName,
+      params.actorAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
+      params.type,
+      params.referenceId || null,
+      params.message,
+      (/* @__PURE__ */ new Date()).toISOString()
+    ]
+  );
+}
+async function getUserNotifications(userId, limit = 40) {
+  const db = await getDb();
+  const [rows, countRow] = await Promise.all([
+    db.query(
+      "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      [userId, limit]
+    ),
+    db.get(
+      "SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0",
+      [userId]
+    )
+  ]);
+  const notifications = rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    actorId: r.actor_id,
+    actorName: r.actor_name,
+    actorAvatar: r.actor_avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
+    type: r.type,
+    referenceId: r.reference_id || void 0,
+    message: r.message,
+    isRead: !!r.is_read,
+    createdAt: r.created_at
+  }));
+  return {
+    notifications,
+    unreadCount: countRow ? countRow.cnt : 0
+  };
+}
+async function markNotificationsRead(userId, notificationId) {
+  const db = await getDb();
+  if (notificationId) {
+    await db.run("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?", [notificationId, userId]);
+  } else {
+    await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ?", [userId]);
+  }
+  return { success: true };
+}
+async function getUserHighlights(userId) {
+  const db = await getDb();
+  const rows = await db.query(
+    "SELECT * FROM profile_highlights WHERE user_id = ? ORDER BY created_at DESC",
+    [userId]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    title: r.title,
+    coverUrl: r.cover_url,
+    mediaUrl: r.media_url,
+    mediaType: r.media_type || "image",
+    createdAt: r.created_at
+  }));
+}
+async function createProfileHighlight(params) {
+  const db = await getDb();
+  const id = `hl_${Date.now()}_${import_crypto2.default.randomBytes(4).toString("hex")}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const safeTitle = (params.title || "Aura").trim().slice(0, 32);
+  const safeMedia = (params.mediaUrl || "").trim();
+  const safeCover = (params.coverUrl || safeMedia).trim();
+  await db.run(
+    `INSERT INTO profile_highlights (id, user_id, title, cover_url, media_url, media_type, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, params.userId, safeTitle, safeCover, safeMedia, params.mediaType === "video" ? "video" : "image", now]
+  );
+  return {
+    id,
+    userId: params.userId,
+    title: safeTitle,
+    coverUrl: safeCover,
+    mediaUrl: safeMedia,
+    mediaType: params.mediaType === "video" ? "video" : "image",
+    createdAt: now
+  };
+}
+async function deleteProfileHighlight(highlightId, userId) {
+  const db = await getDb();
+  await db.run("DELETE FROM profile_highlights WHERE id = ? AND user_id = ?", [highlightId, userId]);
+  return { success: true };
+}
+async function togglePinPost(postId, userId) {
+  const db = await getDb();
+  const post = await db.get("SELECT id, tarotista_id, is_pinned FROM videos WHERE id = ? AND is_deleted = 0", [postId]);
+  if (!post) {
+    throw { status: 404, message: "Publicaci\xF3n no encontrada." };
+  }
+  if (post.tarotista_id !== userId) {
+    throw { status: 403, message: "Solo puedes fijar o desfijar tus propias publicaciones." };
+  }
+  const nextPinned = post.is_pinned ? 0 : 1;
+  await db.run("UPDATE videos SET is_pinned = ? WHERE id = ?", [nextPinned, postId]);
+  return { isPinned: !!nextPinned };
+}
+async function toggleCommentLike(commentId, userId) {
+  const db = await getDb();
+  const comment = await db.get("SELECT id, video_id, author_id, content FROM comments WHERE id = ? AND is_deleted = 0", [commentId]);
+  if (!comment) {
+    throw { status: 404, message: "Comentario no encontrado." };
+  }
+  const existing = await db.get("SELECT id FROM comment_likes WHERE comment_id = ? AND user_id = ?", [commentId, userId]);
+  let isLiked = false;
+  if (existing) {
+    await db.run("DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?", [commentId, userId]);
+    isLiked = false;
+  } else {
+    const id = `cml_${Date.now()}_${import_crypto2.default.randomBytes(4).toString("hex")}`;
+    await db.run("INSERT INTO comment_likes (id, comment_id, user_id, created_at) VALUES (?, ?, ?, ?)", [
+      id,
+      commentId,
+      userId,
+      (/* @__PURE__ */ new Date()).toISOString()
+    ]);
+    isLiked = true;
+  }
+  const countRow = await db.get("SELECT COUNT(*) as cnt FROM comment_likes WHERE comment_id = ?", [commentId]);
+  const likesCount = countRow ? countRow.cnt : 0;
+  await db.run("UPDATE comments SET likes_count = ? WHERE id = ?", [likesCount, commentId]);
+  return { likesCount, isLiked };
+}
+async function getPublicUserProfile(targetIdentifier, currentUserId) {
+  const db = await getDb();
+  let userRow = await db.get("SELECT * FROM users WHERE id = ? OR handle = ?", [targetIdentifier, targetIdentifier]);
+  let tarRow = await db.get("SELECT * FROM tarotista_profiles WHERE id = ? OR user_id = ?", [targetIdentifier, userRow ? userRow.id : targetIdentifier]);
+  if (!userRow && tarRow) {
+    userRow = await db.get("SELECT * FROM users WHERE id = ?", [tarRow.user_id]);
+  }
+  if (!userRow && !tarRow) {
+    return null;
+  }
+  const resolvedUserId = userRow ? userRow.id : tarRow.user_id;
+  const [rel, highlights, feedRes] = await Promise.all([
+    getUserRelationship(resolvedUserId, currentUserId),
+    getUserHighlights(resolvedUserId),
+    getFeedPosts({ authorId: resolvedUserId, currentUserId, limit: 30 })
+  ]);
+  const sortedPosts = [...feedRes.items].sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+  let mappedTarotista = null;
+  if (tarRow) {
+    mappedTarotista = {
+      id: tarRow.id,
+      userId: tarRow.user_id,
+      professionalName: tarRow.professional_name,
+      avatar: tarRow.avatar || userRow?.avatar || "",
+      banner: tarRow.banner || userRow?.cover_image || "",
+      specialties: parseJson(tarRow.specialties, ["Tarot"]),
+      bio: tarRow.bio || userRow?.bio || "",
+      experienceYears: tarRow.experience_years || 1,
+      pricePerMinCoins: tarRow.price_per_min_coins || 15,
+      pricePerMinEur: tarRow.price_per_min_eur || 1.5,
+      languages: parseJson(tarRow.languages, ["Espa\xF1ol"]),
+      country: tarRow.country || "Espa\xF1a",
+      isVerified: !!tarRow.is_verified,
+      kycStatus: tarRow.kyc_status,
+      stripeConnectStatus: tarRow.stripe_connect_status,
+      ratingAverage: tarRow.rating_average || 5,
+      totalReviews: tarRow.total_reviews || 0,
+      totalReadings: tarRow.total_readings || 0,
+      followersCount: rel.followersCount,
+      videoCount: sortedPosts.length,
+      availabilityStatus: tarRow.availability_status || "online",
+      customCommissionPercentage: tarRow.custom_commission_percentage || 20
+    };
+  }
+  const displayName = userRow?.name || tarRow?.professional_name || "Iniciado Kabaly";
+  const defaultHandle = `@${displayName.toLowerCase().replace(/\s+/g, "_")}`;
+  return {
+    id: resolvedUserId,
+    name: displayName,
+    handle: userRow?.handle || defaultHandle,
+    role: userRow?.role || "tarotista",
+    avatar: userRow?.avatar || tarRow?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
+    coverImage: userRow?.cover_image || tarRow?.banner || "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200",
+    bio: userRow?.bio || tarRow?.bio || "Viajero astral en KABALY \u2728",
+    sunSign: userRow?.sun_sign || void 0,
+    moonSign: userRow?.moon_sign || void 0,
+    risingSign: userRow?.rising_sign || void 0,
+    rulingArcana: userRow?.ruling_arcana || void 0,
+    spiritualGift: userRow?.spiritual_gift || void 0,
+    isPrivate: !!userRow?.is_private,
+    followersCount: rel.followersCount,
+    followingCount: rel.followingCount,
+    postsCount: sortedPosts.length,
+    isFollowing: rel.isFollowing,
+    tarotistaProfile: mappedTarotista,
+    highlights,
+    posts: sortedPosts,
+    createdAt: userRow?.created_at || tarRow?.created_at || (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function applyForTarotistaKyc(userId, params) {
+  const db = await getDb();
+  const user = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+  if (!user) {
+    throw { status: 404, message: "Usuario no encontrado." };
+  }
+  const safeProfName = (params.professionalName || user.name).trim();
+  const safeBio = (params.bio || user.bio || "Gu\xEDa espiritual en KABALY").trim();
+  const safeSpecs = Array.isArray(params.specialties) && params.specialties.length > 0 ? params.specialties : ["Tarot"];
+  const safeExp = Math.max(1, Number(params.experienceYears) || 1);
+  const safePriceCoins = Math.max(5, Math.min(500, Math.floor(Number(params.pricePerMinCoins) || 15)));
+  const safePriceEur = Number((safePriceCoins * 0.1).toFixed(2));
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = await db.get("SELECT id FROM tarotista_profiles WHERE user_id = ?", [userId]);
+  let profileId = existing ? existing.id : `tar_${Date.now()}_${import_crypto2.default.randomBytes(3).toString("hex")}`;
+  if (existing) {
+    await db.run(
+      `UPDATE tarotista_profiles
+       SET professional_name = ?, specialties = ?, bio = ?, experience_years = ?,
+           price_per_min_coins = ?, price_per_min_eur = ?, kyc_status = 'pendiente'
+       WHERE user_id = ?`,
+      [safeProfName, JSON.stringify(safeSpecs), safeBio, safeExp, safePriceCoins, safePriceEur, userId]
+    );
+  } else {
+    await db.run(
+      `INSERT INTO tarotista_profiles (
+        id, user_id, professional_name, avatar, banner, specialties, bio, experience_years,
+        price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status,
+        stripe_connect_status, rating_average, total_reviews, total_readings, followers_count,
+        video_count, availability_status, custom_commission_percentage, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pendiente', 'pendiente', 5.0, 0, 0, 0, 0, 'online', 20, ?)`,
+      [
+        profileId,
+        userId,
+        safeProfName,
+        user.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
+        user.cover_image || "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200",
+        JSON.stringify(safeSpecs),
+        safeBio,
+        safeExp,
+        safePriceCoins,
+        safePriceEur,
+        JSON.stringify(params.languages || ["Espa\xF1ol"]),
+        params.country || "Espa\xF1a",
+        now
+      ]
+    );
+  }
+  await db.run("UPDATE users SET role = 'tarotista', updated_at = ? WHERE id = ? AND role = 'cliente'", [now, userId]);
+  return { success: true, profileId };
+}
+async function searchSocialNetwork(query, currentUserId) {
+  const db = await getDb();
+  const q = (query || "").trim().toLowerCase();
+  const likeParam = `%${q}%`;
+  const [userRows, allTarotistas, feedRes] = await Promise.all([
+    q ? db.query(
+      'SELECT id, name, avatar, role, handle FROM users WHERE LOWER(name) LIKE ? OR LOWER(COALESCE(handle, "")) LIKE ? OR LOWER(COALESCE(bio, "")) LIKE ? LIMIT 25',
+      [likeParam, likeParam, likeParam]
+    ) : db.query("SELECT id, name, avatar, role, handle FROM users ORDER BY created_at DESC LIMIT 15"),
+    getPublicTarotistas(),
+    getFeedPosts({ limit: 40, currentUserId })
+  ]);
+  const filteredTarotistas = q ? allTarotistas.filter(
+    (t) => t.professionalName.toLowerCase().includes(q) || t.bio.toLowerCase().includes(q) || t.specialties.some((s) => s.toLowerCase().includes(q))
+  ) : allTarotistas;
+  const filteredPosts = q ? feedRes.items.filter(
+    (p) => p.title.toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q) || p.category.toLowerCase().includes(q) || p.tarotistaName.toLowerCase().includes(q)
+  ) : feedRes.items;
+  const tagCounts = /* @__PURE__ */ new Map();
+  for (const p of feedRes.items) {
+    const text = `${p.title} ${p.description || ""} #${p.category.replace(/\s+/g, "")}`;
+    const matches = text.match(/#[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9_]+/g) || [];
+    for (const rawTag of matches) {
+      const normalized = rawTag.toLowerCase();
+      if (!q || normalized.includes(q.replace(/^#/, ""))) {
+        tagCounts.set(rawTag, (tagCounts.get(rawTag) || 0) + 1);
+      }
+    }
+  }
+  const hashtags = Array.from(tagCounts.entries()).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count).slice(0, 12);
+  return {
+    users: userRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      avatar: r.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200",
+      role: r.role,
+      handle: r.handle || `@${r.name.toLowerCase().replace(/\s+/g, "_")}`
+    })),
+    tarotistas: filteredTarotistas,
+    posts: filteredPosts,
+    hashtags
+  };
 }
 
 // src/middleware/upload.ts
@@ -5049,7 +5513,19 @@ async function createServerApp() {
   app.post("/api/users/profile", requireAuth, async (req2, res) => {
     try {
       const userId = req2.user.id;
-      const { name, handle, bio, avatar, coverImage } = req2.body;
+      const {
+        name,
+        handle,
+        bio,
+        avatar,
+        coverImage,
+        sunSign,
+        moonSign,
+        risingSign,
+        rulingArcana,
+        spiritualGift,
+        isPrivate
+      } = req2.body;
       const db = await getDb();
       const safeName = (name || "").trim();
       if (name !== void 0 && safeName.length < 2) {
@@ -5062,6 +5538,12 @@ async function createServerApp() {
             bio = COALESCE(?, bio),
             avatar = COALESCE(?, avatar),
             cover_image = COALESCE(?, cover_image),
+            sun_sign = COALESCE(?, sun_sign),
+            moon_sign = COALESCE(?, moon_sign),
+            rising_sign = COALESCE(?, rising_sign),
+            ruling_arcana = COALESCE(?, ruling_arcana),
+            spiritual_gift = COALESCE(?, spiritual_gift),
+            is_private = COALESCE(?, is_private),
             updated_at = ?
         WHERE id = ?
       `, [
@@ -5070,9 +5552,29 @@ async function createServerApp() {
         bio?.trim() || null,
         avatar?.trim() || null,
         coverImage?.trim() || null,
+        sunSign !== void 0 ? sunSign?.trim() || null : null,
+        moonSign !== void 0 ? moonSign?.trim() || null : null,
+        risingSign !== void 0 ? risingSign?.trim() || null : null,
+        rulingArcana !== void 0 ? rulingArcana?.trim() || null : null,
+        spiritualGift !== void 0 ? spiritualGift?.trim() || null : null,
+        isPrivate !== void 0 ? isPrivate ? 1 : 0 : null,
         (/* @__PURE__ */ new Date()).toISOString(),
         userId
       ]);
+      if (avatar?.trim()) {
+        await db.run("UPDATE tarotista_profiles SET avatar = ? WHERE user_id = ?", [avatar.trim(), userId]).catch(() => {
+        });
+        await db.run("UPDATE videos SET tarotista_avatar = ? WHERE tarotista_id = ?", [avatar.trim(), userId]).catch(() => {
+        });
+      }
+      if (coverImage?.trim()) {
+        await db.run("UPDATE tarotista_profiles SET banner = ? WHERE user_id = ?", [coverImage.trim(), userId]).catch(() => {
+        });
+      }
+      if (safeName) {
+        await db.run("UPDATE videos SET tarotista_name = ? WHERE tarotista_id = ?", [safeName, userId]).catch(() => {
+        });
+      }
       const updated = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
       res.json({
         success: true,
@@ -5085,6 +5587,12 @@ async function createServerApp() {
           coverImage: updated.cover_image,
           handle: updated.handle,
           bio: updated.bio,
+          sunSign: updated.sun_sign || void 0,
+          moonSign: updated.moon_sign || void 0,
+          risingSign: updated.rising_sign || void 0,
+          rulingArcana: updated.ruling_arcana || void 0,
+          spiritualGift: updated.spiritual_gift || void 0,
+          isPrivate: !!updated.is_private,
           coinsBalance: updated.coins_balance,
           isAgeVerified: !!updated.is_age_verified,
           spendingLimitDaily: updated.spending_limit_daily,
@@ -5288,7 +5796,7 @@ async function createServerApp() {
   const userCommentTimestamps = /* @__PURE__ */ new Map();
   app.get("/api/posts/:id/comments", async (req2, res) => {
     try {
-      const result = await getPostComments(req2.params.id);
+      const result = await getPostComments(req2.params.id, req2.user?.id);
       res.json({ success: true, ...result });
     } catch (err) {
       res.status(500).json({ error: "Error al obtener los comentarios." });
@@ -5476,6 +5984,113 @@ async function createServerApp() {
     } catch (err) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || "Error al consultar visualizaciones." });
+    }
+  });
+  app.get("/api/notifications", requireAuth, async (req2, res) => {
+    try {
+      const data = await getUserNotifications(req2.user.id, 40);
+      res.json({ success: true, ...data });
+    } catch (err) {
+      res.status(500).json({ error: "Error al consultar notificaciones c\xF3smicas." });
+    }
+  });
+  app.post("/api/notifications/read", requireAuth, async (req2, res) => {
+    try {
+      const { notificationId } = req2.body || {};
+      const result = await markNotificationsRead(req2.user.id, notificationId);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: "Error al marcar notificaciones como le\xEDdas." });
+    }
+  });
+  app.get("/api/users/:id/public", async (req2, res) => {
+    try {
+      const profile = await getPublicUserProfile(req2.params.id, req2.user?.id);
+      if (!profile) {
+        return res.status(404).json({ error: "Este perfil astral no existe en KABALY." });
+      }
+      res.json({ success: true, profile });
+    } catch (err) {
+      res.status(500).json({ error: "Error al cargar el perfil p\xFAblico." });
+    }
+  });
+  app.get("/api/users/:id/highlights", async (req2, res) => {
+    try {
+      const highlights = await getUserHighlights(req2.params.id);
+      res.json({ success: true, highlights });
+    } catch (err) {
+      res.status(500).json({ error: "Error al cargar Auras Destacadas." });
+    }
+  });
+  app.post("/api/highlights", requireAuth, async (req2, res) => {
+    try {
+      const { title, coverUrl, mediaUrl, mediaType } = req2.body;
+      if (!mediaUrl || typeof mediaUrl !== "string") {
+        return res.status(400).json({ error: "Se requiere una imagen o v\xEDdeo para el Aura Destacada." });
+      }
+      const highlight = await createProfileHighlight({
+        userId: req2.user.id,
+        title: title || "Aura",
+        coverUrl: coverUrl || mediaUrl,
+        mediaUrl,
+        mediaType: mediaType === "video" ? "video" : "image"
+      });
+      res.status(201).json({ success: true, highlight });
+    } catch (err) {
+      res.status(500).json({ error: "Error al crear Aura Destacada." });
+    }
+  });
+  app.delete("/api/highlights/:id", requireAuth, async (req2, res) => {
+    try {
+      const result = await deleteProfileHighlight(req2.params.id, req2.user.id);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: "Error al eliminar Aura Destacada." });
+    }
+  });
+  app.post("/api/posts/:id/pin", requireAuth, async (req2, res) => {
+    try {
+      const result = await togglePinPost(req2.params.id, req2.user.id);
+      res.json({ success: true, ...result });
+    } catch (err) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || "Error al fijar publicaci\xF3n." });
+    }
+  });
+  app.post("/api/comments/:id/like", requireAuth, async (req2, res) => {
+    try {
+      const result = await toggleCommentLike(req2.params.id, req2.user.id);
+      res.json({ success: true, ...result });
+    } catch (err) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || "Error al resonar con el comentario." });
+    }
+  });
+  app.post("/api/tarotistas/apply", requireAuth, async (req2, res) => {
+    try {
+      const { professionalName, specialties, bio, experienceYears, pricePerMinCoins, languages, country } = req2.body;
+      const result = await applyForTarotistaKyc(req2.user.id, {
+        professionalName,
+        specialties,
+        bio,
+        experienceYears,
+        pricePerMinCoins,
+        languages,
+        country
+      });
+      res.status(201).json(result);
+    } catch (err) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || "Error al enviar solicitud de Tarotista." });
+    }
+  });
+  app.get("/api/search", async (req2, res) => {
+    try {
+      const q = typeof req2.query.q === "string" ? req2.query.q : "";
+      const results = await searchSocialNetwork(q, req2.user?.id);
+      res.json({ success: true, ...results });
+    } catch (err) {
+      res.status(500).json({ error: "Error al realizar la b\xFAsqueda c\xF3smica." });
     }
   });
   app.get("/api/coins/packages", async (_req, res) => {

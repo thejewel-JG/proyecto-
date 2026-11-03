@@ -70,6 +70,16 @@ import {
   createChatAttachment,
   getChatAttachmentForUser,
   getTotalUnreadMessagesCount,
+  getUserNotifications,
+  markNotificationsRead,
+  getUserHighlights,
+  createProfileHighlight,
+  deleteProfileHighlight,
+  togglePinPost,
+  toggleCommentLike,
+  getPublicUserProfile,
+  applyForTarotistaKyc,
+  searchSocialNetwork,
 } from './src/db/repo';
 import { uploadMediaMiddleware, uploadPrivateChatMiddleware, PRIVATE_CHAT_DIR } from './src/middleware/upload';
 import { initialCoinPackages, initialGifts, initialLiveStreams } from './src/data/initialData';
@@ -289,7 +299,19 @@ export async function createServerApp() {
   app.post('/api/users/profile', requireAuth, async (req, res) => {
     try {
       const userId = req.user!.id; // Identidad obtenida estrictamente de la sesión
-      const { name, handle, bio, avatar, coverImage } = req.body;
+      const {
+        name,
+        handle,
+        bio,
+        avatar,
+        coverImage,
+        sunSign,
+        moonSign,
+        risingSign,
+        rulingArcana,
+        spiritualGift,
+        isPrivate,
+      } = req.body;
       const db = await getDb();
 
       // Validación
@@ -305,6 +327,12 @@ export async function createServerApp() {
             bio = COALESCE(?, bio),
             avatar = COALESCE(?, avatar),
             cover_image = COALESCE(?, cover_image),
+            sun_sign = COALESCE(?, sun_sign),
+            moon_sign = COALESCE(?, moon_sign),
+            rising_sign = COALESCE(?, rising_sign),
+            ruling_arcana = COALESCE(?, ruling_arcana),
+            spiritual_gift = COALESCE(?, spiritual_gift),
+            is_private = COALESCE(?, is_private),
             updated_at = ?
         WHERE id = ?
       `, [
@@ -313,9 +341,27 @@ export async function createServerApp() {
         bio?.trim() || null,
         avatar?.trim() || null,
         coverImage?.trim() || null,
+        sunSign !== undefined ? (sunSign?.trim() || null) : null,
+        moonSign !== undefined ? (moonSign?.trim() || null) : null,
+        risingSign !== undefined ? (risingSign?.trim() || null) : null,
+        rulingArcana !== undefined ? (rulingArcana?.trim() || null) : null,
+        spiritualGift !== undefined ? (spiritualGift?.trim() || null) : null,
+        isPrivate !== undefined ? (isPrivate ? 1 : 0) : null,
         new Date().toISOString(),
         userId
       ]);
+
+      // Sincronizar avatar/portada/nombre en perfil de tarotista y publicaciones propias
+      if (avatar?.trim()) {
+        await db.run('UPDATE tarotista_profiles SET avatar = ? WHERE user_id = ?', [avatar.trim(), userId]).catch(() => {});
+        await db.run('UPDATE videos SET tarotista_avatar = ? WHERE tarotista_id = ?', [avatar.trim(), userId]).catch(() => {});
+      }
+      if (coverImage?.trim()) {
+        await db.run('UPDATE tarotista_profiles SET banner = ? WHERE user_id = ?', [coverImage.trim(), userId]).catch(() => {});
+      }
+      if (safeName) {
+        await db.run('UPDATE videos SET tarotista_name = ? WHERE tarotista_id = ?', [safeName, userId]).catch(() => {});
+      }
 
       const updated = await db.get<any>('SELECT * FROM users WHERE id = ?', [userId]);
 
@@ -330,6 +376,12 @@ export async function createServerApp() {
           coverImage: updated.cover_image,
           handle: updated.handle,
           bio: updated.bio,
+          sunSign: updated.sun_sign || undefined,
+          moonSign: updated.moon_sign || undefined,
+          risingSign: updated.rising_sign || undefined,
+          rulingArcana: updated.ruling_arcana || undefined,
+          spiritualGift: updated.spiritual_gift || undefined,
+          isPrivate: !!updated.is_private,
           coinsBalance: updated.coins_balance,
           isAgeVerified: !!updated.is_age_verified,
           spendingLimitDaily: updated.spending_limit_daily,
@@ -578,7 +630,7 @@ export async function createServerApp() {
 
   app.get('/api/posts/:id/comments', async (req, res) => {
     try {
-      const result = await getPostComments(req.params.id);
+      const result = await getPostComments(req.params.id, req.user?.id);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(500).json({ error: 'Error al obtener los comentarios.' });
@@ -791,6 +843,135 @@ export async function createServerApp() {
     } catch (err: any) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || 'Error al consultar visualizaciones.' });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // FASE 10: RED SOCIAL COMPLETA (NOTIFICACIONES, PERFILES PÚBLICOS UNIVERSALES,
+  // AURAS DESTACADAS, PUBLICACIONES FIJADAS, LIKES EN COMENTARIOS, KYC Y BUSCADOR)
+  // ---------------------------------------------------------------------------
+
+  // 10.1 Centro de Notificaciones («Ecos del Cosmos»)
+  app.get('/api/notifications', requireAuth, async (req, res) => {
+    try {
+      const data = await getUserNotifications(req.user!.id, 40);
+      res.json({ success: true, ...data });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al consultar notificaciones cósmicas.' });
+    }
+  });
+
+  app.post('/api/notifications/read', requireAuth, async (req, res) => {
+    try {
+      const { notificationId } = req.body || {};
+      const result = await markNotificationsRead(req.user!.id, notificationId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al marcar notificaciones como leídas.' });
+    }
+  });
+
+  // 10.2 Perfil Público Universal (Clientes y Tarotistas)
+  app.get('/api/users/:id/public', async (req, res) => {
+    try {
+      const profile = await getPublicUserProfile(req.params.id, req.user?.id);
+      if (!profile) {
+        return res.status(404).json({ error: 'Este perfil astral no existe en KABALY.' });
+      }
+      res.json({ success: true, profile });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al cargar el perfil público.' });
+    }
+  });
+
+  // 10.3 Auras Destacadas en el Perfil (Stories Fijadas)
+  app.get('/api/users/:id/highlights', async (req, res) => {
+    try {
+      const highlights = await getUserHighlights(req.params.id);
+      res.json({ success: true, highlights });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al cargar Auras Destacadas.' });
+    }
+  });
+
+  app.post('/api/highlights', requireAuth, async (req, res) => {
+    try {
+      const { title, coverUrl, mediaUrl, mediaType } = req.body;
+      if (!mediaUrl || typeof mediaUrl !== 'string') {
+        return res.status(400).json({ error: 'Se requiere una imagen o vídeo para el Aura Destacada.' });
+      }
+      const highlight = await createProfileHighlight({
+        userId: req.user!.id,
+        title: title || 'Aura',
+        coverUrl: coverUrl || mediaUrl,
+        mediaUrl,
+        mediaType: mediaType === 'video' ? 'video' : 'image',
+      });
+      res.status(201).json({ success: true, highlight });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al crear Aura Destacada.' });
+    }
+  });
+
+  app.delete('/api/highlights/:id', requireAuth, async (req, res) => {
+    try {
+      const result = await deleteProfileHighlight(req.params.id, req.user!.id);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al eliminar Aura Destacada.' });
+    }
+  });
+
+  // 10.4 Fijar / Desfijar Publicación en el Perfil
+  app.post('/api/posts/:id/pin', requireAuth, async (req, res) => {
+    try {
+      const result = await togglePinPost(req.params.id, req.user!.id);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || 'Error al fijar publicación.' });
+    }
+  });
+
+  // 10.5 Resonancia (Like) en Comentarios Individuales
+  app.post('/api/comments/:id/like', requireAuth, async (req, res) => {
+    try {
+      const result = await toggleCommentLike(req.params.id, req.user!.id);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || 'Error al resonar con el comentario.' });
+    }
+  });
+
+  // 10.6 Solicitud KYC para convertirse en Tarotista Verificado
+  app.post('/api/tarotistas/apply', requireAuth, async (req, res) => {
+    try {
+      const { professionalName, specialties, bio, experienceYears, pricePerMinCoins, languages, country } = req.body;
+      const result = await applyForTarotistaKyc(req.user!.id, {
+        professionalName,
+        specialties,
+        bio,
+        experienceYears,
+        pricePerMinCoins,
+        languages,
+        country,
+      });
+      res.status(201).json(result);
+    } catch (err: any) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || 'Error al enviar solicitud de Tarotista.' });
+    }
+  });
+
+  // 10.7 Buscador Social Global (Usuarios, Tarotistas, Publicaciones y #Hashtags)
+  app.get('/api/search', async (req, res) => {
+    try {
+      const q = typeof req.query.q === 'string' ? req.query.q : '';
+      const results = await searchSocialNetwork(q, req.user?.id);
+      res.json({ success: true, ...results });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al realizar la búsqueda cósmica.' });
     }
   });
 

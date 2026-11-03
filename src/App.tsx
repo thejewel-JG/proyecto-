@@ -31,6 +31,9 @@ import { SpendingLimitsModal } from './components/SpendingLimitsModal';
 import { BookConsultationModal } from './components/BookConsultationModal';
 import { CreatePostModal } from './components/CreatePostModal';
 import { MessagesView } from './components/MessagesView';
+import { NotificationsDrawer } from './components/NotificationsDrawer';
+import { PublicUserProfileView } from './components/PublicUserProfileView';
+import { SacredFlameIcon, CrystalBallIcon, AstralCompassIcon, SolomonStarIcon } from './components/EsotericIcons';
 
 export const App: React.FC = () => {
   // App state
@@ -59,7 +62,15 @@ export const App: React.FC = () => {
   const [showCreatePostModal, setShowCreatePostModal] = useState<boolean>(false);
   const [bookingTarotista, setBookingTarotista] = useState<TarotistaProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showSearchModal, setShowSearchModal] = useState<boolean>(false);
+  const [exploreSubTab, setExploreSubTab] = useState<'todo' | 'videntes' | 'buscadores' | 'visiones' | 'hashtags'>('todo');
+  const [socialSearchResults, setSocialSearchResults] = useState<{
+    users: any[];
+    tarotistas: TarotistaProfile[];
+    posts: Video[];
+    hashtags: { tag: string; count: number }[];
+  }>({ users: [], tarotistas: [], posts: [], hashtags: [] });
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState<boolean>(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [initialChatUserId, setInitialChatUserId] = useState<string | null>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
   const [initialPostId] = useState<string | null>(() => {
@@ -302,7 +313,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUpdateProfile = async (updatedData: { name: string; handle: string; bio: string; avatar: string; coverImage: string }) => {
+  const handleUpdateProfile = async (updatedData: {
+    name: string;
+    handle: string;
+    bio: string;
+    avatar: string;
+    coverImage: string;
+    sunSign?: string;
+    moonSign?: string;
+    risingSign?: string;
+    rulingArcana?: string;
+    spiritualGift?: string;
+    isPrivate?: boolean;
+  }) => {
     if (!currentUser) return;
     try {
       const res = await fetch('/api/users/profile', {
@@ -313,7 +336,8 @@ export const App: React.FC = () => {
       const data = await res.json();
       if (data.success && data.user) {
         setCurrentUser(data.user);
-        alert('Perfil actualizado correctamente.');
+        await fetchState();
+        alert('Perfil e identidad astral actualizados correctamente.');
       } else if (data.error) {
         alert(data.error);
       }
@@ -355,31 +379,54 @@ export const App: React.FC = () => {
     }
   };
 
-  // Filtered Tarotista Directory for Explore view
-  const filteredTarotistas = tarotistaProfiles.filter(p => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      p.professionalName.toLowerCase().includes(q) ||
-      p.specialties.some(s => s.toLowerCase().includes(q)) ||
-      p.bio.toLowerCase().includes(q)
-    );
-  });
+  // Búsqueda Global en Red Social (Usuarios, Videntes, Visiones y #Hashtags)
+  useEffect(() => {
+    if (activeTab !== 'explore') return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setSocialSearchResults({
+              users: data.users || [],
+              tarotistas: data.tarotistas || [],
+              posts: data.posts || [],
+              hashtags: data.hashtags || [],
+            });
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, searchQuery]);
 
-  const selectedTarotista = tarotistaProfiles.find(p => p.id === selectedTarotistaId);
   const activeStream = liveStreams[0] || null;
 
-  // Contador de mensajes sin leer (Polling cada 10s cuando está autenticado)
+  // Contador de mensajes y notificaciones sin leer (Polling cada 10s cuando está autenticado)
   const fetchUnreadCount = async () => {
     if (!currentUser) {
       setUnreadMessagesCount(0);
+      setUnreadNotificationsCount(0);
       return;
     }
     try {
-      const res = await fetch('/api/unread-count');
-      if (res.ok) {
-        const data = await res.json();
+      const [msgRes, notifRes] = await Promise.all([
+        fetch('/api/unread-count'),
+        fetch('/api/notifications'),
+      ]);
+      if (msgRes.ok) {
+        const data = await msgRes.json();
         setUnreadMessagesCount(data.unreadCount || 0);
+      }
+      if (notifRes.ok) {
+        const nData = await notifRes.json();
+        setUnreadNotificationsCount(nData.unreadCount || 0);
       }
     } catch {
       // Silencioso
@@ -447,6 +494,13 @@ export const App: React.FC = () => {
           setSelectedTarotistaId(null);
           setActiveTab('astra_ai');
         }}
+        onOpenNotifications={() => {
+          if (!currentUser) {
+            setShowAuthModal(true);
+            return;
+          }
+          setShowNotificationsDrawer(true);
+        }}
         onOpenMessages={() => {
           if (!currentUser) {
             setShowAuthModal(true);
@@ -456,6 +510,7 @@ export const App: React.FC = () => {
           setActiveTab('messages');
         }}
         unreadMessagesCount={unreadMessagesCount}
+        unreadNotificationsCount={unreadNotificationsCount}
       />
 
       {/* Main Body Layout Container */}
@@ -468,24 +523,25 @@ export const App: React.FC = () => {
             onSubmitReview={handleSubmitReview}
             onClose={() => setActiveConsultationId(null)}
           />
-        ) : selectedTarotista ? (
-          /* VIEW 2: Tarotista Public Profile Detail */
-          <TarotistaProfileView
-            profile={selectedTarotista}
-            videos={videos}
-            reviews={reviews}
+        ) : selectedTarotistaId ? (
+          /* VIEW 2: Universal Public Profile Detail (Clientes & Tarotistas) */
+          <PublicUserProfileView
+            userId={selectedTarotistaId}
             currentUser={currentUser}
+            reviews={reviews}
             onBack={() => setSelectedTarotistaId(null)}
             onOpenAuthModal={() => setShowAuthModal(true)}
             onStartConversation={handleStartConversation}
-            onBookConsultation={(id) => {
+            onBookConsultation={(tarotistaProfileId) => {
               if (!currentUser) {
                 setShowAuthModal(true);
                 return;
               }
-              const tar = tarotistaProfiles.find(t => t.id === id);
+              const tar = tarotistaProfiles.find(t => t.id === tarotistaProfileId || t.userId === tarotistaProfileId);
               if (tar) setBookingTarotista(tar);
             }}
+            onLikeVideo={handleLikeVideo}
+            onUnlockVideo={handleUnlockVideo}
           />
         ) : (
           /* VIEW 3: Main Tabs or Full Auth View */
@@ -512,7 +568,7 @@ export const App: React.FC = () => {
                       setShowAuthModal(true);
                       return;
                     }
-                    const tar = tarotistaProfiles.find(t => t.id === tarotistaId);
+                    const tar = tarotistaProfiles.find(t => t.id === tarotistaId || t.userId === tarotistaId);
                     if (tar) setBookingTarotista(tar);
                   }}
                   onViewTarotistaProfile={(tarotistaId) => setSelectedTarotistaId(tarotistaId)}
@@ -529,51 +585,173 @@ export const App: React.FC = () => {
               )}
 
             {activeTab === 'explore' && (
-              <div className="space-y-6 max-w-2xl mx-auto pb-12">
-                <div className="bg-[#1A1026] border border-[#D4AF37]/30 rounded-full px-4 py-2.5 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#D4AF37] text-lg">search</span>
+              <div className="space-y-6 max-w-3xl mx-auto pb-14">
+                {/* Search Input */}
+                <div className="bg-[#1A1026] border border-[#D4AF37]/35 rounded-full px-4 py-3 flex items-center gap-2.5 shadow-lg">
+                  <AstralCompassIcon className="w-5 h-5 text-[#D4AF37]" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Buscar tarotistas, carta astral, runas..."
-                    className="bg-transparent flex-1 text-xs text-[#F7E7C1] outline-none"
+                    placeholder="Buscar videntes, @usuarios, #hashtags, signos, tarot..."
+                    className="bg-transparent flex-1 text-xs sm:text-sm text-[#F7E7C1] placeholder-[#A09BAE] outline-none"
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="text-xs text-[#A09BAE] hover:text-white px-2"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
 
-                <h2 className="font-playfair text-lg font-bold text-[#D4AF37] flex items-center gap-2">
-                  <span className="material-symbols-outlined">auto_awesome</span>
-                  Tarotistas Verificados KABALY
-                </h2>
+                {/* Trending Hashtags Pills */}
+                {socialSearchResults.hashtags.length > 0 && (
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] shrink-0">
+                      ✦ Tendencias:
+                    </span>
+                    {socialSearchResults.hashtags.slice(0, 10).map((h) => (
+                      <button
+                        key={h.tag}
+                        onClick={() => setSearchQuery(h.tag)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium shrink-0 border transition-all ${
+                          searchQuery.toLowerCase() === h.tag.toLowerCase()
+                            ? 'bg-[#D4AF37] text-[#0B0911] font-bold border-[#D4AF37]'
+                            : 'bg-[#1A1026]/80 text-[#F7E7C1]/85 border-[#D4AF37]/25 hover:border-[#D4AF37]'
+                        }`}
+                      >
+                        {h.tag} <span className="opacity-60 text-[10px]">({h.count})</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredTarotistas.map((t) => (
-                    <div
+                {/* Sub-tabs de Exploración Social */}
+                <div className="flex border-b border-white/10 gap-2 overflow-x-auto no-scrollbar">
+                  {[
+                    { id: 'todo', label: 'Todo el Cosmos' },
+                    { id: 'videntes', label: `Videntes (${socialSearchResults.tarotistas.length})` },
+                    { id: 'buscadores', label: `Comunidad (${socialSearchResults.users.length})` },
+                    { id: 'visiones', label: `Visiones (${socialSearchResults.posts.length})` },
+                  ].map((t) => (
+                    <button
                       key={t.id}
-                      onClick={() => setSelectedTarotistaId(t.id)}
-                      className="glass-card p-4 rounded-3xl border border-[#D4AF37]/30 flex items-center gap-4 cursor-pointer hover:border-[#D4AF37] transition-all group"
+                      onClick={() => setExploreSubTab(t.id as any)}
+                      className={`pb-2.5 px-3.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 ${
+                        exploreSubTab === t.id
+                          ? 'border-[#D4AF37] text-[#D4AF37]'
+                          : 'border-transparent text-[#A09BAE] hover:text-[#F7E7C1]'
+                      }`}
                     >
-                      <img src={t.avatar} alt={t.professionalName} className="w-16 h-16 rounded-full object-cover border-2 border-[#D4AF37] group-hover:scale-105 transition-transform" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="font-playfair font-bold text-sm text-[#F7E7C1]">{t.professionalName}</h3>
-                          {t.isVerified && (
-                            <span className="material-symbols-outlined text-xs text-[#D4AF37] filled" title="Verificado">verified</span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-[#D4AF37]">{t.specialties.slice(0, 2).join(' • ')}</p>
-                        <div className="flex items-center gap-2 mt-2 text-[10px] text-[#A7A7A7]">
-                          <span className="flex items-center gap-0.5 text-[#D4AF37]">
-                            <span className="material-symbols-outlined text-xs filled">star</span>
-                            {t.ratingAverage}
-                          </span>
-                          <span>({t.totalReviews} reseñas)</span>
-                          <span className="ml-auto font-bold text-[#F7E7C1]">{t.pricePerMinCoins} Mon/min</span>
-                        </div>
-                      </div>
-                    </div>
+                      {t.label}
+                    </button>
                   ))}
                 </div>
+
+                {/* Sección 1: Videntes Verificados */}
+                {(exploreSubTab === 'todo' || exploreSubTab === 'videntes') && socialSearchResults.tarotistas.length > 0 && (
+                  <div className="space-y-3">
+                    <h2 className="font-cinzel text-sm font-bold text-[#D4AF37] uppercase tracking-widest flex items-center gap-1.5">
+                      <SolomonStarIcon className="w-4 h-4" />
+                      <span>Videntes y Oráculos Verificados</span>
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {socialSearchResults.tarotistas.map((t) => (
+                        <div
+                          key={t.id}
+                          onClick={() => setSelectedTarotistaId(t.id)}
+                          className="glass-card p-4 rounded-3xl border border-[#D4AF37]/30 flex items-center gap-4 cursor-pointer hover:border-[#D4AF37] transition-all group"
+                        >
+                          <img src={t.avatar} alt={t.professionalName} className="w-16 h-16 rounded-full object-cover border-2 border-[#D4AF37] group-hover:scale-105 transition-transform" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <h3 className="font-playfair font-bold text-sm text-[#F7E7C1] truncate">{t.professionalName}</h3>
+                              {t.isVerified && (
+                                <span className="material-symbols-outlined text-xs text-[#D4AF37] filled" title="Verificado">verified</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[#D4AF37] truncate">{t.specialties.slice(0, 3).join(' • ')}</p>
+                            <div className="flex items-center gap-2 mt-2 text-[10px] text-[#A7A7A7]">
+                              <span className="flex items-center gap-0.5 text-[#D4AF37]">
+                                ✦ {t.ratingAverage}
+                              </span>
+                              <span>({t.totalReviews} reseñas)</span>
+                              <span className="ml-auto font-bold text-[#F7E7C1]">{t.pricePerMinCoins} Mon/min</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sección 2: Comunidad y Buscadores Astrales (Cualquier usuario) */}
+                {(exploreSubTab === 'todo' || exploreSubTab === 'buscadores') && socialSearchResults.users.length > 0 && (
+                  <div className="space-y-3">
+                    <h2 className="font-cinzel text-sm font-bold text-[#F7E7C1] uppercase tracking-widest flex items-center gap-1.5">
+                      <span>✦ Almas y Buscadores de la Comunidad</span>
+                    </h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {socialSearchResults.users.map((u) => (
+                        <div
+                          key={u.id}
+                          onClick={() => setSelectedTarotistaId(u.id)}
+                          className="bg-[#120D1D]/90 p-3.5 rounded-2xl border border-white/10 hover:border-[#D4AF37]/50 flex items-center gap-3 cursor-pointer transition-all"
+                        >
+                          <img src={u.avatar} alt={u.name} className="w-12 h-12 rounded-full object-cover border border-[#D4AF37]/50 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold text-[#F7E7C1] truncate">{u.name}</p>
+                              <span className="text-[10px] text-[#D4AF37] font-mono truncate">{u.handle}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] text-[#A09BAE]">
+                              {u.sunSign && <span className="text-[#D4AF37]">☉ {u.sunSign}</span>}
+                              {u.rulingArcana && <span>• 🎴 {u.rulingArcana}</span>}
+                              <span className="ml-auto text-[10px] text-[#F7E7C1]/60">{u.followersCount} seg.</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sección 3: Visiones (Posts & Reels) */}
+                {(exploreSubTab === 'todo' || exploreSubTab === 'visiones') && socialSearchResults.posts.length > 0 && (
+                  <div className="space-y-3">
+                    <h2 className="font-cinzel text-sm font-bold text-[#D4AF37] uppercase tracking-widest">
+                      ✦ Visiones y Publicaciones Recientes
+                    </h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {socialSearchResults.posts.map((post) => (
+                        <div
+                          key={post.id}
+                          onClick={() => setSelectedTarotistaId(post.tarotistaId)}
+                          className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-[#120D1D] border border-white/10 hover:border-[#D4AF37] cursor-pointer group"
+                        >
+                          {post.mediaType === 'image' ? (
+                            <img src={post.videoUrl || post.thumbnailUrl} alt={post.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          ) : (
+                            <video src={post.videoUrl} poster={post.thumbnailUrl} muted playsInline className="w-full h-full object-cover" />
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent" />
+                          <div className="absolute bottom-2 left-2.5 right-2.5">
+                            <p className="text-[11px] font-bold text-[#F7E7C1] line-clamp-1">{post.title}</p>
+                            <div className="flex items-center justify-between text-[10px] text-[#D4AF37] mt-0.5">
+                              <span className="truncate">{post.tarotistaName}</span>
+                              <span className="flex items-center gap-0.5 shrink-0">
+                                <SacredFlameIcon className="w-3 h-3" filled />
+                                {post.likes}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -639,10 +817,7 @@ export const App: React.FC = () => {
                   initialTargetUserId={initialChatUserId}
                   onClearInitialTargetUser={() => setInitialChatUserId(null)}
                   onOpenProfile={(uid) => {
-                    const tar = tarotistaProfiles.find(t => t.userId === uid || t.id === uid);
-                    if (tar) {
-                      setSelectedTarotistaId(tar.id);
-                    }
+                    setSelectedTarotistaId(uid);
                   }}
                 />
               ) : (
@@ -799,6 +974,26 @@ export const App: React.FC = () => {
         onPostCreated={() => {
           setShowCreatePostModal(false);
           fetchState();
+        }}
+      />
+
+      {/* Drawer: Ecos del Cosmos (Centro de Notificaciones) */}
+      <NotificationsDrawer
+        isOpen={showNotificationsDrawer}
+        onClose={() => {
+          setShowNotificationsDrawer(false);
+          fetchUnreadCount();
+        }}
+        onOpenUserProfile={(uid) => {
+          setShowNotificationsDrawer(false);
+          setSelectedTarotistaId(uid);
+        }}
+        onOpenPost={(postId) => {
+          setShowNotificationsDrawer(false);
+          const v = videos.find(x => x.id === postId);
+          if (v) {
+            setSelectedTarotistaId(v.tarotistaId);
+          }
         }}
       />
     </div>

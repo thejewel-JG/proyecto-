@@ -1069,6 +1069,102 @@ export async function runMigrations(db: IDatabase): Promise<void> {
     `, ['007_phase9_gifts_and_unlocks', new Date().toISOString()]);
     console.log('[Database] Migración 007_phase9_gifts_and_unlocks completada.');
   }
+
+  // Migración 008: Red Social Esotérica Completa (Tríada Astral, Auras Destacadas, Notificaciones, Posts Fijados, Likes en Comentarios)
+  if (!appliedSet.has('008_phase10_social_network_complete')) {
+    console.log('[Database] Aplicando migración: 008_phase10_social_network_complete...');
+
+    const safeAddColumn = async (table: string, colDef: string) => {
+      try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+      } catch (e: any) {
+        // Columna ya existe
+      }
+    };
+
+    // 1. Campos de identidad esotérica y privacidad en users
+    await safeAddColumn('users', 'sun_sign VARCHAR(32) DEFAULT NULL');
+    await safeAddColumn('users', 'moon_sign VARCHAR(32) DEFAULT NULL');
+    await safeAddColumn('users', 'rising_sign VARCHAR(32) DEFAULT NULL');
+    await safeAddColumn('users', 'ruling_arcana VARCHAR(64) DEFAULT NULL');
+    await safeAddColumn('users', 'spiritual_gift VARCHAR(64) DEFAULT NULL');
+    await safeAddColumn('users', 'is_private INT NOT NULL DEFAULT 0');
+
+    // 2. Campos de fijado y carrusel en videos
+    await safeAddColumn('videos', 'is_pinned INT NOT NULL DEFAULT 0');
+    await safeAddColumn('videos', 'media_urls TEXT DEFAULT NULL');
+
+    // 3. Campos de resonancia y fijado en comments
+    await safeAddColumn('comments', 'likes_count INT NOT NULL DEFAULT 0');
+    await safeAddColumn('comments', 'is_pinned INT NOT NULL DEFAULT 0');
+
+    // 4. Tabla de notificaciones («Ecos del Cosmos»)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        actor_id VARCHAR(64) NOT NULL,
+        actor_name VARCHAR(255) NOT NULL,
+        actor_avatar TEXT,
+        type VARCHAR(32) NOT NULL,
+        reference_id VARCHAR(64),
+        message TEXT NOT NULL,
+        is_read INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 5. Tabla de Auras Destacadas en el perfil (Stories fijadas permanentemente)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS profile_highlights (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        title VARCHAR(64) NOT NULL,
+        cover_url TEXT NOT NULL,
+        media_url TEXT NOT NULL,
+        media_type VARCHAR(16) NOT NULL DEFAULT 'image',
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 6. Tabla de resonancias en comentarios
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS comment_likes (
+        id VARCHAR(64) PRIMARY KEY,
+        comment_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(comment_id, user_id)
+      );
+    `);
+
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_highlights_user ON profile_highlights(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)');
+    } catch (e: any) {
+      // Ignorar si ya existen
+    }
+
+    // Sembrar datos astrológicos por defecto para los perfiles semilla si existen
+    try {
+      await db.run(`
+        UPDATE users SET sun_sign = 'Escorpio', moon_sign = 'Piscis', rising_sign = 'Acuario', ruling_arcana = 'XVIII • La Luna', spiritual_gift = 'Videncia Lunar'
+        WHERE id = 'usr_tarotista_1' AND sun_sign IS NULL
+      `);
+      await db.run(`
+        UPDATE users SET sun_sign = 'Leo', moon_sign = 'Sagitario', rising_sign = 'Aries', ruling_arcana = 'XIX • El Sol', spiritual_gift = 'Astrología Kármica'
+        WHERE id = 'usr_tarotista_2' AND sun_sign IS NULL
+      `);
+    } catch (e: any) {
+      // Ignorar
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['008_phase10_social_network_complete', new Date().toISOString()]);
+    console.log('[Database] Migración 008_phase10_social_network_complete completada.');
+  }
 }
 
 

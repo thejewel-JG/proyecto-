@@ -11,6 +11,12 @@ export interface UserSessionData {
   coverImage?: string;
   handle?: string;
   bio?: string;
+  sunSign?: string;
+  moonSign?: string;
+  risingSign?: string;
+  rulingArcana?: string;
+  spiritualGift?: string;
+  isPrivate?: boolean;
   coinsBalance: number;
   purchasedCoinsBalance?: number;
   earningsCoinsBalance?: number;
@@ -230,6 +236,12 @@ export async function loginUser(params: {
     coverImage: row.cover_image,
     handle: row.handle,
     bio: row.bio,
+    sunSign: row.sun_sign || undefined,
+    moonSign: row.moon_sign || undefined,
+    risingSign: row.rising_sign || undefined,
+    rulingArcana: row.ruling_arcana || undefined,
+    spiritualGift: row.spiritual_gift || undefined,
+    isPrivate: !!row.is_private,
     coinsBalance: row.coins_balance,
     purchasedCoinsBalance: row.purchased_coins_balance || 0,
     earningsCoinsBalance: row.earnings_coins_balance || 0,
@@ -303,6 +315,12 @@ export async function getSessionUser(sessionToken: string | undefined): Promise<
     coverImage: row.cover_image,
     handle: row.handle,
     bio: row.bio,
+    sunSign: row.sun_sign || undefined,
+    moonSign: row.moon_sign || undefined,
+    risingSign: row.rising_sign || undefined,
+    rulingArcana: row.ruling_arcana || undefined,
+    spiritualGift: row.spiritual_gift || undefined,
+    isPrivate: !!row.is_private,
     coinsBalance: row.coins_balance,
     purchasedCoinsBalance: row.purchased_coins_balance || 0,
     earningsCoinsBalance: row.earnings_coins_balance || 0,

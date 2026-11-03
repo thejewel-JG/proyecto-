@@ -147,3 +147,4 @@ export const AlchemicalSunIcon: React.FC<IconProps> = ({ className = 'w-4 h-4' }
     <path d="M12 2V4M12 20V22M2 12H4M20 12H22M4.93 4.93L6.34 6.34M17.66 17.66L19.07 19.07M19.07 4.93L17.66 6.34M6.34 17.66L4.93 19.07" strokeLinecap="round" />
   </svg>
 );
+

@@ -1,9 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { User, Video, TarotistaProfile, CoinPackage, LedgerTransaction, WithdrawalRequest, Category } from '../types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { User, Video, TarotistaProfile, CoinPackage, LedgerTransaction, WithdrawalRequest, Category, ProfileHighlight } from '../types';
 import { WalletView } from './WalletView';
 import { CreatePostModal } from './CreatePostModal';
 import { EditPostModal } from './EditPostModal';
 import { FollowsListModal } from './FollowsListModal';
+import { SacredFlameIcon, CrystalBallIcon, ArcanaGrimoireIcon, SolomonStarIcon } from './EsotericIcons';
+
+const ZODIAC_SIGNS = [
+  'Aries', 'Tauro', 'Géminis', 'Cáncer', 'Leo', 'Virgo',
+  'Libra', 'Escorpio', 'Sagitario', 'Capricornio', 'Acuario', 'Piscis'
+];
+
+const MAJOR_ARCANA = [
+  '0 - El Loco', 'I - El Mago', 'II - La Sacerdotisa', 'III - La Emperatriz',
+  'IV - El Emperador', 'V - El Hierofante', 'VI - Los Enamorados', 'VII - El Carro',
+  'VIII - La Fuerza', 'IX - El Ermitaño', 'X - La Rueda de la Fortuna', 'XI - La Justicia',
+  'XII - El Colgado', 'XIII - La Muerte', 'XIV - La Templanza', 'XV - El Diablo',
+  'XVI - La Torre', 'XVII - La Estrella', 'XVIII - La Luna', 'XIX - El Sol',
+  'XX - El Juicio', 'XXI - El Mundo'
+];
 
 interface UserProfileViewProps {
   currentUser: User;
@@ -29,10 +44,23 @@ interface UserProfileViewProps {
     priceCoins?: number;
     description: string;
   }) => Promise<void>;
-  onUpdateProfile: (updatedData: { name: string; handle: string; bio: string; avatar: string; coverImage: string }) => Promise<void>;
+  onUpdateProfile: (updatedData: {
+    name: string;
+    handle: string;
+    bio: string;
+    avatar: string;
+    coverImage: string;
+    sunSign?: string;
+    moonSign?: string;
+    risingSign?: string;
+    rulingArcana?: string;
+    spiritualGift?: string;
+    isPrivate?: boolean;
+  }) => Promise<void>;
   onSwitchUserRole?: (role: 'cliente' | 'tarotista' | 'admin') => void;
   onSelectVideo?: (videoId: string) => void;
   onSelectConsultation?: (consultationId: string) => void;
+  onViewPublicProfile?: (userId: string) => void;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -310,19 +338,199 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     }
   };
 
-  // Edit profile state
+  // Edit profile state + Esoteric Triad
   const [editName, setEditName] = useState(currentUser.name);
   const [editHandle, setEditHandle] = useState(currentUser.handle || `@${currentUser.name.toLowerCase().replace(/\s+/g, '')}`);
   const [editBio, setEditBio] = useState(currentUser.bio || 'Explorador del cosmos y apasionado del Tarot y la Astrología en KABALY ✨');
   const [editAvatar, setEditAvatar] = useState(currentUser.avatar);
   const [editCover, setEditCover] = useState(currentUser.coverImage || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200');
+  const [editSunSign, setEditSunSign] = useState(currentUser.sunSign || '');
+  const [editMoonSign, setEditMoonSign] = useState(currentUser.moonSign || '');
+  const [editRisingSign, setEditRisingSign] = useState(currentUser.risingSign || '');
+  const [editRulingArcana, setEditRulingArcana] = useState(currentUser.rulingArcana || '');
+  const [editSpiritualGift, setEditSpiritualGift] = useState(currentUser.spiritualGift || '');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  // Auras Destacadas (Highlights)
+  const [highlights, setHighlights] = useState<ProfileHighlight[]>([]);
+  const [activeHighlight, setActiveHighlight] = useState<ProfileHighlight | null>(null);
+  const [showCreateHighlightModal, setShowCreateHighlightModal] = useState(false);
+  const [highlightTitle, setHighlightTitle] = useState('');
+  const [highlightMediaUrl, setHighlightMediaUrl] = useState('');
+  const [highlightMediaType, setHighlightMediaType] = useState<'image' | 'video'>('image');
+  const [isUploadingHighlight, setIsUploadingHighlight] = useState(false);
+  const highlightFileRef = useRef<HTMLInputElement>(null);
+
+  // Solicitud KYC para ser Tarotista Verificado
+  const [showKycModal, setShowKycModal] = useState(false);
+  const [kycName, setKycName] = useState(currentUser.name);
+  const [kycBio, setKycBio] = useState(currentUser.bio || '');
+  const [kycPrice, setKycPrice] = useState(35);
+  const [kycSpecialties, setKycSpecialties] = useState<Category[]>(['Tarot', 'Astrología']);
+  const [isSubmittingKyc, setIsSubmittingKyc] = useState(false);
+
+  const fetchHighlights = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(currentUser.id)}/highlights`);
+      if (res.ok) {
+        const data = await res.json();
+        setHighlights(data.highlights || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    fetchHighlights();
+  }, [fetchHighlights]);
+
+  // Subir archivo desde el dispositivo para Avatar, Portada o Aura Destacada
+  const uploadDeviceFile = async (file: File): Promise<{ url: string; mediaType: 'image' | 'video' } | null> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Error al subir archivo');
+        return null;
+      }
+      return { url: data.url, mediaType: data.mediaType || 'image' };
+    } catch {
+      alert('Error de conexión al subir el archivo');
+      return null;
+    }
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingAvatar(true);
+    const uploaded = await uploadDeviceFile(file);
+    if (uploaded) setEditAvatar(uploaded.url);
+    setIsUploadingAvatar(false);
+  };
+
+  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingCover(true);
+    const uploaded = await uploadDeviceFile(file);
+    if (uploaded) setEditCover(uploaded.url);
+    setIsUploadingCover(false);
+  };
+
+  const handleHighlightFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingHighlight(true);
+    const uploaded = await uploadDeviceFile(file);
+    if (uploaded) {
+      setHighlightMediaUrl(uploaded.url);
+      setHighlightMediaType(uploaded.mediaType);
+    }
+    setIsUploadingHighlight(false);
+  };
+
+  const handleCreateHighlight = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!highlightTitle.trim() || !highlightMediaUrl.trim()) return;
+    try {
+      const res = await fetch('/api/highlights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: highlightTitle.trim(),
+          coverUrl: highlightMediaUrl.trim(),
+          mediaUrl: highlightMediaUrl.trim(),
+          mediaType: highlightMediaType,
+        }),
+      });
+      if (res.ok) {
+        setHighlightTitle('');
+        setHighlightMediaUrl('');
+        setShowCreateHighlightModal(false);
+        fetchHighlights();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteHighlight = async (id: string) => {
+    try {
+      const res = await fetch(`/api/highlights/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        setHighlights(prev => prev.filter(h => h.id !== id));
+        setActiveHighlight(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleTogglePinPost = async (e: React.MouseEvent, postId: string) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/pin`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUserPosts(prev =>
+          prev
+            .map(p => (p.id === postId ? { ...p, isPinned: data.isPinned } : p))
+            .sort((a, b) => Number(!!b.isPinned) - Number(!!a.isPinned))
+        );
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSubmitKyc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingKyc(true);
+    try {
+      const res = await fetch('/api/tarotistas/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          professionalName: kycName,
+          specialties: kycSpecialties,
+          bio: kycBio,
+          pricePerMinCoins: kycPrice,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(data.message || 'Solicitud KYC enviada correctamente.');
+        setShowKycModal(false);
+        onRefreshUser?.();
+      } else {
+        alert(data.error || 'No se pudo enviar la solicitud');
+      }
+    } catch {
+      alert('Error de conexión al enviar solicitud KYC');
+    } finally {
+      setIsSubmittingKyc(false);
+    }
+  };
 
   // Filter user's uploaded videos/images
   const userTarotistaProfile = tarotistaProfiles.find(p => p.userId === currentUser.id);
-  const myPosts = userPosts.length > 0 ? userPosts : videos.filter(v => 
+  const rawPosts = userPosts.length > 0 ? userPosts : videos.filter(v => 
     v.tarotistaId === currentUser.id || 
     (userTarotistaProfile && v.tarotistaId === userTarotistaProfile.id)
   );
+  const myPosts = [...rawPosts].sort((a, b) => Number(!!b.isPinned) - Number(!!a.isPinned));
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -332,6 +540,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       bio: editBio,
       avatar: editAvatar,
       coverImage: editCover,
+      sunSign: editSunSign,
+      moonSign: editMoonSign,
+      risingSign: editRisingSign,
+      rulingArcana: editRulingArcana,
+      spiritualGift: editSpiritualGift,
     });
     setShowEditProfileModal(false);
   };
@@ -393,7 +606,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </button>
 
               <button
-                onClick={onOpenSpendingLimits}
+                onClick={onOpenSpendingLimits || onOpenLimitsModal}
                 className="bg-[#1A1026] text-[#D4AF37] border border-[#D4AF37]/30 px-3.5 py-2.5 rounded-full text-xs font-bold hover:bg-[#5A2D82]/50 transition-all flex items-center gap-1"
                 title="Ajustes de autorregulación y límites de gasto"
               >
@@ -404,7 +617,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
 
           {/* User Bio Details */}
-          <div className="mt-4 text-center sm:text-left space-y-2">
+          <div className="mt-4 text-center sm:text-left space-y-2.5">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
               <h2 className="font-playfair text-2xl font-bold text-[#F7E7C1]">
                 {currentUser.name}
@@ -417,7 +630,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   ? 'bg-[#5A2D82] text-[#D4AF37] border border-[#D4AF37]'
                   : 'bg-[#2E1B47] text-[#A7A7A7]'
               }`}>
-                {currentUser.role === 'tarotista' ? '🔮 Tarotista Verificado' : '✨ Cliente Kabaly'}
+                {currentUser.role === 'tarotista' ? '🔮 Vidente Verificado' : '✨ Buscador Astral'}
               </span>
             </div>
 
@@ -425,11 +638,48 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               {currentUser.bio || 'Explorador del cosmos, lecturas de tarot, carta astral y revelaciones en KABALY.'}
             </p>
 
-            {/* Role switch CTA */}
+            {/* Tríada Astral e Identidad Esotérica */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 pt-1">
+              {currentUser.sunSign && (
+                <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
+                  <span className="text-[#D4AF37]">☉</span> Sol en <strong>{currentUser.sunSign}</strong>
+                </span>
+              )}
+              {currentUser.moonSign && (
+                <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
+                  <span className="text-[#D4AF37]">☽</span> Luna en <strong>{currentUser.moonSign}</strong>
+                </span>
+              )}
+              {currentUser.risingSign && (
+                <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
+                  <span className="text-[#D4AF37]">↑</span> Ascendente <strong>{currentUser.risingSign}</strong>
+                </span>
+              )}
+              {currentUser.rulingArcana && (
+                <span className="px-2.5 py-1 rounded-full bg-[#2E1B47]/60 border border-[#D4AF37]/40 text-[10px] text-[#D4AF37] font-bold">
+                  🎴 {currentUser.rulingArcana}
+                </span>
+              )}
+              {currentUser.spiritualGift && (
+                <span className="px-2.5 py-1 rounded-full bg-[#0B0911]/80 border border-white/10 text-[10px] text-[#A09BAE]">
+                  ✦ {currentUser.spiritualGift}
+                </span>
+              )}
+              {!currentUser.sunSign && !currentUser.rulingArcana && (
+                <button
+                  onClick={() => setShowEditProfileModal(true)}
+                  className="px-3 py-1 rounded-full bg-[#1A1026] border border-dashed border-[#D4AF37]/40 text-[10px] text-[#D4AF37] hover:border-[#D4AF37] transition-all"
+                >
+                  + Configurar mi Tríada Astral (☉ ☽ ↑) y Arcano Regente
+                </button>
+              )}
+            </div>
+
+            {/* Role switch CTA -> Real KYC Application */}
             {currentUser.role === 'cliente' && (
               <div className="pt-2">
                 <button
-                  onClick={() => onSwitchUserRole('tarotista')}
+                  onClick={() => setShowKycModal(true)}
                   className="text-xs text-[#D4AF37] hover:underline font-bold flex items-center gap-1 justify-center sm:justify-start"
                 >
                   <span className="material-symbols-outlined text-sm">auto_awesome</span>
@@ -439,8 +689,46 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             )}
           </div>
 
+          {/* Auras Destacadas (Instagram-style Highlights Row) */}
+          <div className="pt-5 mt-4 border-t border-white/5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]/80">
+                ✦ Auras Destacadas Permanentes
+              </span>
+            </div>
+            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-1">
+              {/* Botón + Nueva Aura */}
+              <button
+                onClick={() => setShowCreateHighlightModal(true)}
+                className="flex flex-col items-center gap-1.5 shrink-0 group"
+              >
+                <div className="w-14 h-14 rounded-full border-2 border-dashed border-[#D4AF37]/50 bg-[#1A1026]/80 flex items-center justify-center text-[#D4AF37] group-hover:border-[#D4AF37] group-hover:scale-105 transition-all">
+                  <span className="material-symbols-outlined text-xl">add</span>
+                </div>
+                <span className="text-[10px] text-[#D4AF37] font-semibold">Nueva Aura</span>
+              </button>
+
+              {highlights.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => setActiveHighlight(h)}
+                  className="flex flex-col items-center gap-1.5 shrink-0 group"
+                >
+                  <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-[#D4AF37] via-[#9D4EDD] to-[#F7E7C1] group-hover:scale-105 transition-transform">
+                    <div className="w-full h-full rounded-full overflow-hidden bg-[#0B0911] p-[1.5px]">
+                      <img src={h.coverUrl} alt={h.title} className="w-full h-full object-cover rounded-full" />
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-[#F7E7C1]/85 font-medium max-w-[68px] truncate group-hover:text-[#D4AF37]">
+                    {h.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Social Stats Row */}
-          <div className="grid grid-cols-4 gap-2 pt-6 mt-6 border-t border-[#D4AF37]/20 text-center">
+          <div className="grid grid-cols-4 gap-2 pt-5 mt-4 border-t border-[#D4AF37]/20 text-center">
             <div 
               onClick={() => setFollowsModal({ isOpen: true, type: 'followers' })}
               className="bg-[#0B0911]/60 p-2.5 rounded-2xl border border-[#D4AF37]/20 cursor-pointer hover:border-[#D4AF37] transition-all group"
@@ -468,7 +756,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <span className="font-playfair text-lg font-bold text-[#D4AF37] block">
                 {myPosts.length}
               </span>
-              <span className="text-[10px] text-[#A7A7A7] uppercase tracking-wider">Posts</span>
+              <span className="text-[10px] text-[#A7A7A7] uppercase tracking-wider">Visiones</span>
             </div>
 
             <div 
@@ -486,34 +774,34 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       </div>
 
       {/* Sub-Navigation Tabs */}
-      <div className="flex border-b border-[#D4AF37]/20 gap-2">
+      <div className="flex border-b border-[#D4AF37]/20 gap-2 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveSubTab('publicaciones')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 ${
+          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
             activeSubTab === 'publicaciones'
               ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
               : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
           }`}
         >
-          <span className="material-symbols-outlined text-base">grid_on</span>
+          <SolomonStarIcon className="w-4 h-4" />
           <span>Mis Publicaciones ({myPosts.length})</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('guardados')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 ${
+          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
             activeSubTab === 'guardados'
               ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
               : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
           }`}
         >
-          <span className="material-symbols-outlined text-base">bookmark</span>
-          <span>Colección Privada ({savedPosts.length})</span>
+          <ArcanaGrimoireIcon className="w-4 h-4" filled={activeSubTab === 'guardados'} />
+          <span>Grimorio Guardado ({savedPosts.length})</span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('monedero')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 ${
+          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
             activeSubTab === 'monedero'
               ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
               : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
@@ -525,7 +813,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('consultas')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 ${
+          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
             activeSubTab === 'consultas'
               ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
               : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
@@ -537,7 +825,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
         <button
           onClick={() => setActiveSubTab('compras')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 ${
+          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
             activeSubTab === 'compras'
               ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
               : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
@@ -572,7 +860,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               {myPosts.map((post) => (
                 <div 
                   key={post.id} 
-                  className="bg-[#1A1026] border border-[#D4AF37]/30 rounded-2xl overflow-hidden group hover:border-[#D4AF37] transition-all relative flex flex-col justify-between"
+                  className={`bg-[#1A1026] border rounded-2xl overflow-hidden group transition-all relative flex flex-col justify-between ${
+                    post.isPinned ? 'border-[#D4AF37] shadow-[0_0_16px_rgba(212,175,55,0.25)]' : 'border-[#D4AF37]/30 hover:border-[#D4AF37]'
+                  }`}
                 >
                   <div className="relative aspect-[3/4] bg-black">
                     {post.mediaType === 'image' ? (
@@ -581,10 +871,17 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       <video src={post.videoUrl} poster={post.thumbnailUrl} className="w-full h-full object-cover" />
                     )}
                     
-                    {/* Category Pill */}
-                    <span className="absolute top-2 left-2 bg-[#0B0911]/80 backdrop-blur-md text-[#D4AF37] text-[9px] font-bold px-2 py-0.5 rounded-full border border-[#D4AF37]/30">
-                      {post.category}
-                    </span>
+                    {/* Pinned or Category Pill */}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1">
+                      {post.isPinned && (
+                        <span className="bg-[#D4AF37] text-[#0B0911] text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md flex items-center gap-0.5">
+                          ✦ FIJADO
+                        </span>
+                      )}
+                      <span className="bg-[#0B0911]/80 backdrop-blur-md text-[#D4AF37] text-[9px] font-bold px-2 py-0.5 rounded-full border border-[#D4AF37]/30 w-fit">
+                        {post.category}
+                      </span>
+                    </div>
 
                     {/* Premium Lock Badge */}
                     {post.isPremium && (
@@ -594,25 +891,36 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       </span>
                     )}
 
-                    {/* Likes & Views Overlay */}
+                    {/* Likes & Views Overlay with Esoteric Icons */}
                     <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center text-[10px] text-white bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg">
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs text-red-500 filled">favorite</span>
+                      <span className="flex items-center gap-1 text-[#D4AF37]">
+                        <SacredFlameIcon className="w-3.5 h-3.5" filled />
                         {post.likes}
                       </span>
-                      <span className="flex items-center gap-1 text-[#A7A7A7]">
-                        <span className="material-symbols-outlined text-xs">chat</span>
+                      <span className="flex items-center gap-1 text-[#F7E7C1]/80">
+                        <CrystalBallIcon className="w-3.5 h-3.5" />
                         {post.commentsCount}
                       </span>
                     </div>
                   </div>
 
                   <div className="p-3 flex items-center justify-between border-t border-[#D4AF37]/10">
-                    <div className="flex-1 pr-2">
+                    <div className="flex-1 pr-2 min-w-0">
                       <h4 className="font-playfair text-xs font-bold text-[#F7E7C1] line-clamp-1">{post.title}</h4>
                       {post.description && <p className="text-[10px] text-[#A7A7A7] line-clamp-1 italic">{post.description}</p>}
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={(e) => handleTogglePinPost(e, post.id)}
+                        className={`p-1 rounded-full transition-colors ${
+                          post.isPinned
+                            ? 'bg-[#D4AF37] text-[#0B0911]'
+                            : 'hover:bg-[#5A2D82] text-[#A7A7A7] hover:text-[#D4AF37]'
+                        }`}
+                        title={post.isPinned ? 'Desfijar del altar' : 'Fijar en mi perfil (máx. 3)'}
+                      >
+                        <span className="text-xs font-bold leading-none px-0.5">✦</span>
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1107,42 +1415,126 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         }}
       />
 
-      {/* MODAL 2: Edit Profile Modal */}
+      {/* MODAL 2: Edit Profile Modal with Real Device Upload & Esoteric Triad */}
       {showEditProfileModal && (
-        <div className="fixed inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 max-w-md w-full gold-glow text-left space-y-4">
+        <div className="fixed inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 max-w-lg w-full gold-glow text-left space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-[#D4AF37]/20 pb-3">
-              <h3 className="font-playfair text-lg font-bold text-[#F7E7C1]">Editar Perfil Social</h3>
+              <h3 className="font-playfair text-lg font-bold text-[#F7E7C1] flex items-center gap-2">
+                <SolomonStarIcon className="w-5 h-5 text-[#D4AF37]" />
+                <span>Editar Perfil e Identidad Astral</span>
+              </h3>
               <button onClick={() => setShowEditProfileModal(false)} className="text-[#A7A7A7] hover:text-[#F7E7C1]">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveProfile} className="space-y-3 text-xs text-[#F7E7C1]">
-              <div>
-                <label className="text-[10px] text-[#A7A7A7] block mb-1">Nombre Completo</label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
-                />
+            <form onSubmit={handleSaveProfile} className="space-y-3.5 text-xs text-[#F7E7C1]">
+              {/* Avatar & Portada con Subida Real desde Dispositivo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#0B0911]/70 p-3 rounded-2xl border border-[#D4AF37]/20">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider block">
+                    Foto de Perfil (Avatar)
+                  </label>
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={editAvatar}
+                      alt="Preview"
+                      className="w-12 h-12 rounded-full object-cover border border-[#D4AF37] shrink-0"
+                    />
+                    <div className="flex-1 space-y-1">
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarFileChange}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        disabled={isUploadingAvatar}
+                        className="w-full bg-[#2E1B47] hover:bg-[#5A2D82] border border-[#D4AF37]/40 text-[#F7E7C1] py-1.5 px-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-xs">upload</span>
+                        {isUploadingAvatar ? 'Subiendo...' : 'Subir desde dispositivo'}
+                      </button>
+                      <input
+                        type="text"
+                        value={editAvatar}
+                        onChange={(e) => setEditAvatar(e.target.value)}
+                        placeholder="o pega una URL..."
+                        className="w-full bg-[#1A1026] border border-white/10 rounded-lg px-2 py-1 text-[10px] text-[#A09BAE]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider block">
+                    Imagen de Portada
+                  </label>
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={editCover}
+                      alt="Cover Preview"
+                      className="w-16 h-12 rounded-xl object-cover border border-[#D4AF37]/40 shrink-0"
+                    />
+                    <div className="flex-1 space-y-1">
+                      <input
+                        ref={coverInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCoverFileChange}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => coverInputRef.current?.click()}
+                        disabled={isUploadingCover}
+                        className="w-full bg-[#2E1B47] hover:bg-[#5A2D82] border border-[#D4AF37]/40 text-[#F7E7C1] py-1.5 px-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-xs">panorama</span>
+                        {isUploadingCover ? 'Subiendo...' : 'Subir Portada'}
+                      </button>
+                      <input
+                        type="text"
+                        value={editCover}
+                        onChange={(e) => setEditCover(e.target.value)}
+                        placeholder="o pega una URL..."
+                        className="w-full bg-[#1A1026] border border-white/10 rounded-lg px-2 py-1 text-[10px] text-[#A09BAE]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-[#A7A7A7] block mb-1">Nombre Visible</label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-[#A7A7A7] block mb-1">Usuario (@handle)</label>
+                  <input
+                    type="text"
+                    required
+                    value={editHandle}
+                    onChange={(e) => setEditHandle(e.target.value)}
+                    className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="text-[10px] text-[#A7A7A7] block mb-1">Nombre de Usuario (@handle)</label>
-                <input
-                  type="text"
-                  required
-                  value={editHandle}
-                  onChange={(e) => setEditHandle(e.target.value)}
-                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] text-[#A7A7A7] block mb-1">Biografía</label>
+                <label className="text-[10px] text-[#A7A7A7] block mb-1">Biografía Mística</label>
                 <textarea
                   value={editBio}
                   onChange={(e) => setEditBio(e.target.value)}
@@ -1150,27 +1542,73 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="text-[10px] text-[#A7A7A7] block mb-1">URL Avatar (Foto de Perfil)</label>
-                <input
-                  type="url"
-                  value={editAvatar}
-                  onChange={(e) => setEditAvatar(e.target.value)}
-                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
-                />
+              {/* Tríada Astral (Sol, Luna, Ascendente) */}
+              <div className="pt-1 border-t border-white/5 space-y-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] block">
+                  ✦ Tríada Astral & Arcano Regente (Activa la Sinastría con otros perfiles)
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] text-[#A09BAE] block mb-1">☉ Signo Solar</label>
+                    <select
+                      value={editSunSign}
+                      onChange={(e) => setEditSunSign(e.target.value)}
+                      className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2 text-xs text-[#F7E7C1]"
+                    >
+                      <option value="">Seleccionar</option>
+                      {ZODIAC_SIGNS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#A09BAE] block mb-1">☽ Signo Lunar</label>
+                    <select
+                      value={editMoonSign}
+                      onChange={(e) => setEditMoonSign(e.target.value)}
+                      className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2 text-xs text-[#F7E7C1]"
+                    >
+                      <option value="">Seleccionar</option>
+                      {ZODIAC_SIGNS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#A09BAE] block mb-1">↑ Ascendente</label>
+                    <select
+                      value={editRisingSign}
+                      onChange={(e) => setEditRisingSign(e.target.value)}
+                      className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2 text-xs text-[#F7E7C1]"
+                    >
+                      <option value="">Seleccionar</option>
+                      {ZODIAC_SIGNS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-[#A09BAE] block mb-1">🎴 Arcano Mayor Regente</label>
+                    <select
+                      value={editRulingArcana}
+                      onChange={(e) => setEditRulingArcana(e.target.value)}
+                      className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2 text-xs text-[#F7E7C1]"
+                    >
+                      <option value="">Seleccionar Arcano</option>
+                      {MAJOR_ARCANA.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-[#A09BAE] block mb-1">✨ Don o Afinidad Espiritual</label>
+                    <input
+                      type="text"
+                      value={editSpiritualGift}
+                      onChange={(e) => setEditSpiritualGift(e.target.value)}
+                      placeholder="Ej. Intuición Lunar, Tarot Marsella..."
+                      className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2 text-xs text-[#F7E7C1]"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="text-[10px] text-[#A7A7A7] block mb-1">URL Imagen de Portada</label>
-                <input
-                  type="url"
-                  value={editCover}
-                  onChange={(e) => setEditCover(e.target.value)}
-                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowEditProfileModal(false)}
@@ -1183,6 +1621,193 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   className="flex-1 bg-[#D4AF37] text-[#0B0911] font-bold py-3 rounded-full text-xs uppercase tracking-wider gold-glow"
                 >
                   Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Crear Nueva Aura Destacada (Highlight) */}
+      {showCreateHighlightModal && (
+        <div className="fixed inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 max-w-sm w-full gold-glow text-left space-y-4">
+            <div className="flex justify-between items-center border-b border-[#D4AF37]/20 pb-3">
+              <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">✦ Nueva Aura Destacada</h3>
+              <button onClick={() => setShowCreateHighlightModal(false)} className="text-[#A7A7A7] hover:text-[#F7E7C1]">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <form onSubmit={handleCreateHighlight} className="space-y-3 text-xs">
+              <div>
+                <label className="text-[10px] text-[#A7A7A7] block mb-1">Título del Aura (Ej. Rituales, Mi Altar, Testimonios)</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={24}
+                  value={highlightTitle}
+                  onChange={(e) => setHighlightTitle(e.target.value)}
+                  placeholder="Ej. Tiradas Lunares"
+                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] text-[#A7A7A7] block">Imagen o Vídeo del Aura</label>
+                <input
+                  ref={highlightFileRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleHighlightFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => highlightFileRef.current?.click()}
+                  disabled={isUploadingHighlight}
+                  className="w-full bg-[#2E1B47] hover:bg-[#5A2D82] border border-[#D4AF37]/40 text-[#F7E7C1] py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-sm">add_photo_alternate</span>
+                  {isUploadingHighlight ? 'Subiendo archivo...' : 'Elegir Foto o Vídeo del Dispositivo'}
+                </button>
+                <input
+                  type="text"
+                  value={highlightMediaUrl}
+                  onChange={(e) => setHighlightMediaUrl(e.target.value)}
+                  placeholder="o pega una URL directa..."
+                  className="w-full bg-[#0B0911] border border-white/10 rounded-xl p-2 text-[11px] text-[#A09BAE]"
+                />
+              </div>
+
+              {highlightMediaUrl && (
+                <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border-2 border-[#D4AF37]">
+                  <img src={highlightMediaUrl} alt="Preview" className="w-full h-full object-cover" />
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={!highlightTitle.trim() || !highlightMediaUrl.trim() || isUploadingHighlight}
+                className="w-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold py-2.5 rounded-full text-xs uppercase tracking-wider disabled:opacity-40"
+              >
+                Fijar Aura en mi Perfil
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Visor de Aura Destacada */}
+      {activeHighlight && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+          onClick={() => setActiveHighlight(null)}
+        >
+          <div
+            className="relative max-w-sm w-full aspect-[9/16] max-h-[82vh] rounded-3xl overflow-hidden border-2 border-[#D4AF37] bg-[#0B0911] shadow-2xl flex flex-col justify-between"
+            onClick={e => e.stopPropagation()}
+          >
+            {activeHighlight.mediaType === 'video' ? (
+              <video src={activeHighlight.mediaUrl} autoPlay controls playsInline className="absolute inset-0 w-full h-full object-cover" />
+            ) : (
+              <img src={activeHighlight.mediaUrl} alt={activeHighlight.title} className="absolute inset-0 w-full h-full object-cover" />
+            )}
+            <div className="relative z-10 p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <img src={currentUser.avatar} alt="" className="w-8 h-8 rounded-full object-cover border border-[#D4AF37]" />
+                <div>
+                  <p className="text-xs font-bold text-[#F7E7C1]">{activeHighlight.title}</p>
+                  <p className="text-[10px] text-[#D4AF37]">{currentUser.name}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleDeleteHighlight(activeHighlight.id)}
+                  className="w-8 h-8 rounded-full bg-red-950/80 text-red-300 flex items-center justify-center hover:bg-red-800"
+                  title="Eliminar Aura Destacada"
+                >
+                  <span className="material-symbols-outlined text-sm">delete</span>
+                </button>
+                <button
+                  onClick={() => setActiveHighlight(null)}
+                  className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: Solicitud KYC para convertirse en Tarotista Verificado */}
+      {showKycModal && (
+        <div className="fixed inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 max-w-md w-full gold-glow text-left space-y-4">
+            <div className="flex justify-between items-center border-b border-[#D4AF37]/20 pb-3">
+              <h3 className="font-cinzel text-base font-bold text-[#D4AF37] flex items-center gap-2">
+                <SolomonStarIcon className="w-5 h-5" />
+                <span>Solicitud de Vidente Verificado (KYC)</span>
+              </h3>
+              <button onClick={() => setShowKycModal(false)} className="text-[#A7A7A7] hover:text-[#F7E7C1]">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitKyc} className="space-y-3 text-xs text-[#F7E7C1]">
+              <p className="text-[11px] text-[#A09BAE] leading-relaxed">
+                Al activar tu perfil profesional podrás ofrecer consultas 1:1 por chat, audio y vídeo con pagos protegidos en Escrow y publicar contenido exclusivo desbloqueable.
+              </p>
+
+              <div>
+                <label className="text-[10px] text-[#A7A7A7] block mb-1">Nombre Artístico / Profesional</label>
+                <input
+                  type="text"
+                  required
+                  value={kycName}
+                  onChange={(e) => setKycName(e.target.value)}
+                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] text-[#A7A7A7] block mb-1">Tarifa por Minuto (Monedas Kabaly)</label>
+                <input
+                  type="number"
+                  min={10}
+                  max={500}
+                  required
+                  value={kycPrice}
+                  onChange={(e) => setKycPrice(Number(e.target.value))}
+                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#D4AF37] font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] text-[#A7A7A7] block mb-1">Presentación y Experiencia Esotérica</label>
+                <textarea
+                  required
+                  value={kycBio}
+                  onChange={(e) => setKycBio(e.target.value)}
+                  placeholder="Describe tus oráculos, años de experiencia y enfoque espiritual..."
+                  className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-2.5 text-xs text-[#F7E7C1] h-20"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowKycModal(false)}
+                  className="flex-1 bg-[#2E1B47] text-[#A7A7A7] font-bold py-2.5 rounded-full text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingKyc}
+                  className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold py-2.5 rounded-full text-xs uppercase tracking-wider gold-glow"
+                >
+                  {isSubmittingKyc ? 'Enviando...' : 'Enviar Solicitud KYC'}
                 </button>
               </div>
             </form>

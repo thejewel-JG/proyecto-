@@ -20,6 +20,12 @@ export interface User {
   handle?: string;
   bio?: string;
   coverImage?: string;
+  sunSign?: string;
+  moonSign?: string;
+  risingSign?: string;
+  rulingArcana?: string;
+  spiritualGift?: string;
+  isPrivate?: boolean;
   followersCount?: number;
   followingCount?: number;
   followingIds?: string[];
@@ -91,6 +97,8 @@ export interface Video {
   isLikedByCurrentUser?: boolean;
   isSavedByCurrentUser?: boolean;
   mediaType?: 'video' | 'image';
+  mediaUrls?: string[];
+  isPinned?: boolean;
   createdAt?: string;
   description?: string;
   isWithdrawn?: boolean;
@@ -106,10 +114,60 @@ export interface Comment {
   authorAvatar: string;
   parentId?: string | null;
   content: string;
+  likesCount?: number;
+  isLikedByCurrentUser?: boolean;
+  isPinned?: boolean;
   isDeleted: boolean;
   createdAt: string;
   updatedAt?: string;
   replies?: Comment[];
+}
+
+export interface ProfileHighlight {
+  id: string;
+  userId: string;
+  title: string;
+  coverUrl: string;
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  createdAt: string;
+}
+
+export interface CosmicNotification {
+  id: string;
+  userId: string;
+  actorId: string;
+  actorName: string;
+  actorAvatar: string;
+  type: 'like' | 'comment' | 'reply' | 'follow' | 'mention' | 'unlock' | 'gift' | 'consultation' | 'kyc';
+  referenceId?: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface PublicUserProfile {
+  id: string;
+  name: string;
+  handle: string;
+  role: UserRole;
+  avatar: string;
+  coverImage?: string;
+  bio?: string;
+  sunSign?: string;
+  moonSign?: string;
+  risingSign?: string;
+  rulingArcana?: string;
+  spiritualGift?: string;
+  isPrivate?: boolean;
+  followersCount: number;
+  followingCount: number;
+  postsCount: number;
+  isFollowing: boolean;
+  tarotistaProfile?: TarotistaProfile | null;
+  highlights: ProfileHighlight[];
+  posts: Video[];
+  createdAt: string;
 }
 
 export interface Story {

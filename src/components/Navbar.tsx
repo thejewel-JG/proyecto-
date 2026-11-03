@@ -14,7 +14,9 @@ interface NavbarProps {
   onOpenCreatePost?: () => void;
   onOpenMessages?: () => void;
   onOpenAstraAi?: () => void;
+  onOpenNotifications?: () => void;
   unreadMessagesCount?: number;
+  unreadNotificationsCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -27,6 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearch,
   onOpenAdmin,
   onOpenAstraAi,
+  onOpenNotifications,
+  unreadNotificationsCount = 0,
 }) => {
   const [showOraclesMenu, setShowOraclesMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -165,6 +169,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <AstralCompassIcon className="w-4 h-4" />
           </button>
+
+          {currentUser && onOpenNotifications && (
+            <button
+              onClick={onOpenNotifications}
+              className="relative w-8 h-8 rounded-full bg-white/5 hover:bg-[#2E1B47]/70 flex items-center justify-center text-[#F7E7C1] hover:text-[#D4AF37] transition-colors"
+              title="Ecos del Cosmos (Notificaciones)"
+            >
+              <span className="material-symbols-outlined text-base">notifications</span>
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[#D4AF37] text-[#0B0911] font-bold text-[9px] flex items-center justify-center border border-[#0B0911] shadow-[0_0_8px_#D4AF37]">
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {currentUser ? (
             <>

@@ -1009,6 +1009,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               setPosts(prev => prev.map(p => p.id === currentVideo.id ? { ...p, commentsCount: newCount } : p));
             }
           }}
+          onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
         />
       </div>
 
