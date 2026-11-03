@@ -73,7 +73,8 @@ export const App: React.FC = () => {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [initialChatUserId, setInitialChatUserId] = useState<string | null>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
-  const [initialPostId] = useState<string | null>(() => {
+  const [dailyCardRevealed, setDailyCardRevealed] = useState<boolean>(false);
+  const [initialPostId, setInitialPostId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       return params.get('post');
@@ -611,6 +612,67 @@ export const App: React.FC = () => {
                   )}
                 </div>
 
+                {/* Banner Interactivo: Carta del Día Colectiva + Frecuencia Astral */}
+                {!searchQuery && (
+                  <div className="bg-gradient-to-r from-[#1A1026] via-[#241438] to-[#120D1D] border border-[#D4AF37]/40 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl relative overflow-hidden">
+                    <div className="space-y-1.5 text-center sm:text-left">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] flex items-center justify-center sm:justify-start gap-1">
+                        ✦ Sincronicidad Colectiva de Hoy
+                      </span>
+                      <h3 className="font-cinzel text-base sm:text-lg font-bold text-[#F7E7C1]">
+                        {dailyCardRevealed ? '🎴 XVII · La Estrella (Renovación & Claridad)' : '🎴 Descubre el Arcano Colectivo del Día'}
+                      </h3>
+                      <p className="text-xs text-[#A09BAE] max-w-md leading-relaxed">
+                        {dailyCardRevealed
+                          ? 'La energía colectiva vibra hoy en Acuario y el elemento Aire: momento ideal para manifestar intenciones, sanar vínculos y escuchar tu intuición.'
+                          : 'Toca la carta sagrada para sintonizar con la frecuencia astrológica que guía hoy a la comunidad de KABALY.'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDailyCardRevealed(!dailyCardRevealed)}
+                      className={`px-5 py-3 rounded-2xl border font-cinzel text-xs font-bold uppercase tracking-wider shrink-0 transition-all ${
+                        dailyCardRevealed
+                          ? 'bg-[#0B0911]/90 border-[#D4AF37] text-[#D4AF37] shadow-[0_0_20px_rgba(212,175,55,0.3)]'
+                          : 'bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] border-transparent hover:scale-105 gold-glow'
+                      }`}
+                    >
+                      {dailyCardRevealed ? '✦ Carta Revelada' : '🔮 Revelar Carta'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Carrusel de Videntes en Línea Ahora Mismo */}
+                {!searchQuery && tarotistaProfiles.filter(t => t.availability === 'online').length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        Videntes Conectados Ahora Mismo
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
+                      {tarotistaProfiles
+                        .filter(t => t.availability === 'online')
+                        .map((tar) => (
+                          <div
+                            key={tar.id}
+                            onClick={() => setSelectedTarotistaId(tar.id)}
+                            className="bg-[#120D1D]/90 border border-emerald-500/30 hover:border-[#D4AF37] rounded-2xl p-2.5 flex items-center gap-2.5 shrink-0 cursor-pointer transition-all"
+                          >
+                            <div className="relative">
+                              <img src={tar.avatar} alt={tar.name} className="w-10 h-10 rounded-full object-cover border border-[#D4AF37]" />
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0B0911] absolute bottom-0 right-0" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-[#F7E7C1]">{tar.name}</p>
+                              <span className="text-[10px] text-[#D4AF37] font-semibold">{tar.pricePerMinCoins} 🪙/min</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Trending Hashtags Pills */}
                 {socialSearchResults.hashtags.length > 0 && (
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -823,6 +885,15 @@ export const App: React.FC = () => {
                   onClearInitialTargetUser={() => setInitialChatUserId(null)}
                   onOpenProfile={(uid) => {
                     setSelectedTarotistaId(uid);
+                  }}
+                  onBookConsultation={(tarotistaUserId) => {
+                    const tar = tarotistaProfiles.find(t => t.id === tarotistaUserId || t.userId === tarotistaUserId);
+                    if (tar) setBookingTarotista(tar);
+                    else setSelectedTarotistaId(tarotistaUserId);
+                  }}
+                  onOpenPost={(postId) => {
+                    setInitialPostId(postId);
+                    setActiveTab('feed');
                   }}
                 />
               ) : (

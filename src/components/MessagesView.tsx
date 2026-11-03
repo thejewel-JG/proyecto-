@@ -7,12 +7,17 @@ interface MessagesViewProps {
   initialTargetUserId?: string | null;
   onClearInitialTargetUser?: () => void;
   onOpenProfile?: (userId: string) => void;
+  onBookConsultation?: (tarotistaId: string) => void;
+  onOpenPost?: (postId: string) => void;
 }
 
 export const MessagesView: React.FC<MessagesViewProps> = ({
   currentUser,
   initialTargetUserId,
   onClearInitialTargetUser,
+  onOpenProfile,
+  onBookConsultation,
+  onOpenPost,
 }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -222,6 +227,9 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
             currentUser={currentUser}
             onClose={() => setActiveConversation(null)}
             onConversationUpdated={handleUpdateActiveConv}
+            onOpenProfile={onOpenProfile}
+            onBookConsultation={onBookConsultation}
+            onOpenPost={onOpenPost}
           />
         ) : (
           <div className="hidden md:flex flex-col items-center justify-center h-full w-full bg-[#120E1C]/60 border border-[#D4AF37]/20 rounded-2xl p-8 text-center text-[#A09BAE] space-y-3">

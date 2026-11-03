@@ -7,6 +7,9 @@ interface ChatWindowProps {
   currentUser: User;
   onClose: () => void;
   onConversationUpdated?: (updated: Partial<Conversation>) => void;
+  onOpenProfile?: (userId: string) => void;
+  onBookConsultation?: (tarotistaId: string) => void;
+  onOpenPost?: (postId: string) => void;
 }
 
 interface LocalChatMessage extends PrivateChatMessage {
@@ -18,6 +21,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   currentUser,
   onClose,
   onConversationUpdated,
+  onOpenProfile,
+  onBookConsultation,
+  onOpenPost,
 }) => {
   const [messages, setMessages] = useState<LocalChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -424,13 +430,17 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     <div className="flex flex-col h-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-2xl overflow-hidden shadow-[0_0_35px_rgba(0,0,0,0.8)] relative">
       {/* Header */}
       <div className="px-4 py-3 bg-[#120E1C] border-b border-[#D4AF37]/20 flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
+        <div
+          onClick={() => onOpenProfile && onOpenProfile(otherUser.id)}
+          className="flex items-center gap-3 cursor-pointer group"
+        >
           <div className="relative">
             <img
               src={otherUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200'}
               alt={otherUser.name}
-              className="w-10 h-10 rounded-full object-cover border border-[#D4AF37]/40"
+              className="w-10 h-10 rounded-full object-cover border border-[#D4AF37]/40 group-hover:border-[#D4AF37] transition-all"
             />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0B0911] absolute top-0 right-0" title="En sintonía astral" />
             {otherUser.isVerified && (
               <span className="material-symbols-outlined text-xs text-[#D4AF37] filled absolute -bottom-1 -right-1 bg-[#0B0911] rounded-full">
                 verified
@@ -439,21 +449,32 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h3 className="font-playfair font-bold text-sm text-[#F7E7C1] leading-tight">
+              <h3 className="font-playfair font-bold text-sm text-[#F7E7C1] leading-tight group-hover:text-[#D4AF37] transition-colors">
                 {otherUser.name}
               </h3>
               <span className="text-[9px] uppercase font-bold text-[#D4AF37] bg-[#5A2D82]/60 px-1.5 py-0.5 rounded-full border border-[#D4AF37]/20">
-                {otherUser.role}
+                {otherUser.role === 'tarotista' ? '🔮 Vidente' : '✨ Buscador'}
               </span>
             </div>
-            {otherUser.handle && (
-              <span className="text-[11px] text-[#A09BAE]">{otherUser.handle}</span>
-            )}
+            <div className="flex items-center gap-2">
+              {otherUser.handle && (
+                <span className="text-[11px] text-[#A09BAE]">{otherUser.handle}</span>
+              )}
+              <span className="text-[9px] text-emerald-400 font-semibold">• En sintonía</span>
+            </div>
           </div>
         </div>
 
         {/* Action icons */}
-        <div className="flex items-center gap-1 relative">
+        <div className="flex items-center gap-1.5 relative">
+          {otherUser.role === 'tarotista' && onBookConsultation && (
+            <button
+              onClick={() => onBookConsultation(otherUser.id)}
+              className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] text-[10px] font-bold uppercase tracking-wider shadow-[0_0_12px_rgba(212,175,55,0.3)] hover:scale-105 transition"
+            >
+              <span>🔮 Solicitar Consulta</span>
+            </button>
+          )}
           <div className="relative">
             <button
               onClick={() => setShowMenu(!showMenu)}
@@ -572,10 +593,40 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                     </div>
                   )}
 
-                  {/* Texto seguro sin ejecución HTML */}
-                  {msg.content && msg.content !== '[Imagen adjunta]' && (
-                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  )}
+                  {/* Texto seguro y Tarjeta Interactiva si es una Visión Compartida */}
+                  {msg.content && msg.content !== '[Imagen adjunta]' && (() => {
+                    const postMatch = msg.content.match(/[?&]post=([a-zA-Z0-9_-]+)/);
+                    const sharedPostId = postMatch ? postMatch[1] : null;
+                    return (
+                      <div className="space-y-2">
+                        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                        {sharedPostId && (
+                          <div className="p-2.5 rounded-xl bg-[#0B0911]/90 border border-[#D4AF37]/40 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-base">🔮</span>
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider block">
+                                  Visión de KABALY
+                                </span>
+                                <span className="text-[10px] text-[#A09BAE] truncate block">
+                                  Publicación compartida en el chat
+                                </span>
+                              </div>
+                            </div>
+                            {onOpenPost && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenPost(sharedPostId)}
+                                className="px-2.5 py-1 rounded-full bg-[#D4AF37] text-[#0B0911] font-bold text-[10px] shrink-0 hover:scale-105 transition"
+                              >
+                                Abrir ➔
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Pie del mensaje: Hora, estado y reporte */}
                   <div className="flex items-center justify-end gap-1.5 mt-1.5 text-[9px] opacity-75">
@@ -590,13 +641,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                           </span>
                         )}
                         {msg.status === 'sent' && (
-                          <span className="material-symbols-outlined text-[13px] text-gray-300" title="Enviado al servidor">
-                            done
+                          <span className="text-[10px] text-gray-300" title="Enviado al servidor">
+                            ✓
                           </span>
                         )}
                         {msg.status === 'read' && (
-                          <span className="material-symbols-outlined text-[13px] text-[#D4AF37] filled" title="Leído">
-                            done_all
+                          <span className="text-[10px] text-[#D4AF37] font-bold" title="Leído">
+                            ✦ Visto
                           </span>
                         )}
                         {msg.status === 'error' && (
@@ -657,7 +708,26 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       )}
 
       {/* Footer / Input Bar */}
-      <div className="p-3 bg-[#120E1C] border-t border-[#D4AF37]/20 flex flex-col gap-1.5">
+      <div className="p-3 bg-[#120E1C] border-t border-[#D4AF37]/20 flex flex-col gap-2">
+        {/* Susurros Rápidos Esotéricos */}
+        {!isBlockedByMe && !hasBlockedMe && (
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            {[
+              '✦ Te envío luz y buena energía astral',
+              '🔮 ¿Tienes disponibilidad para una lectura?',
+              '🌙 ¿Qué arcano rige hoy mi energía?',
+            ].map((quickText) => (
+              <button
+                key={quickText}
+                type="button"
+                onClick={() => setInputText(quickText)}
+                className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/25 hover:border-[#D4AF37] text-[10px] text-[#F7E7C1]/85 shrink-0 transition"
+              >
+                {quickText}
+              </button>
+            ))}
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
