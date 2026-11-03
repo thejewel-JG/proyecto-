@@ -2177,8 +2177,12 @@ async function getFeedPosts(opts = {}) {
     if (!opts.currentUserId) {
       return { items: [], nextCursor: null, hasMore: false };
     }
-    conditions.push("tarotista_id IN (SELECT following_id FROM follows WHERE follower_id = ?)");
-    params.push(opts.currentUserId);
+    conditions.push(`(
+      tarotista_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+      OR tarotista_id IN (SELECT id FROM tarotista_profiles WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?))
+      OR tarotista_id IN (SELECT user_id FROM tarotista_profiles WHERE id IN (SELECT following_id FROM follows WHERE follower_id = ?))
+    )`);
+    params.push(opts.currentUserId, opts.currentUserId, opts.currentUserId);
   } else if (opts.category && opts.category !== "Para ti") {
     conditions.push("category = ?");
     params.push(opts.category);
@@ -2225,6 +2229,7 @@ async function getFeedPosts(opts = {}) {
     post.hasUnlocked = hasUnlocked;
     if (!hasUnlocked) {
       post.videoUrl = "";
+      post.mediaUrls = void 0;
     }
     return post;
   });
@@ -2250,13 +2255,14 @@ async function createPost(params) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const isPrem = !!params.isPremium;
   const price = isPrem && typeof params.priceCoins === "number" && params.priceCoins > 0 ? Math.floor(params.priceCoins) : null;
+  const mediaUrlsJson = Array.isArray(params.mediaUrls) && params.mediaUrls.length > 0 ? JSON.stringify(params.mediaUrls) : null;
   await db.run(`
     INSERT INTO videos (
       id, tarotista_id, tarotista_name, tarotista_avatar, is_verified,
-      title, video_url, thumbnail_url, category, likes, comments_count,
+      title, video_url, media_urls, thumbnail_url, category, likes, comments_count,
       shares_count, sound_title, is_premium, is_exclusive, price_coins, media_type,
       description, is_deleted, idempotency_key, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, 0, ?, ?)
   `, [
     id,
     params.authorId,
@@ -2265,6 +2271,7 @@ async function createPost(params) {
     params.isVerified ? 1 : 0,
     params.title,
     params.videoUrl,
+    mediaUrlsJson,
     params.thumbnailUrl || (params.mediaType === "image" ? params.videoUrl : ""),
     params.category || "Tarot",
     params.mediaType === "video" ? "Audio Original" : "Visual Sagrada",
@@ -3857,6 +3864,28 @@ async function searchSocialNetwork(query, currentUserId) {
     posts: filteredPosts,
     hashtags
   };
+}
+async function togglePinComment(commentId, userId, isAdmin = false) {
+  const db = await getDb();
+  const comment = await db.get("SELECT * FROM comments WHERE id = ? AND is_deleted = 0", [commentId]);
+  if (!comment) {
+    return { success: false, error: "Comentario no encontrado.", status: 404 };
+  }
+  const video = await db.get("SELECT * FROM videos WHERE id = ?", [comment.video_id]);
+  if (!video) {
+    return { success: false, error: "Publicaci\xF3n no encontrada.", status: 404 };
+  }
+  const tarProfile = await db.get("SELECT id FROM tarotista_profiles WHERE user_id = ?", [userId]);
+  const isPostAuthor = video.tarotista_id === userId || tarProfile && video.tarotista_id === tarProfile.id;
+  if (!isPostAuthor && !isAdmin) {
+    return { success: false, error: "Solo el autor de la visi\xF3n puede fijar un comentario en su or\xE1culo.", status: 403 };
+  }
+  const nextPinned = comment.is_pinned ? 0 : 1;
+  if (nextPinned === 1) {
+    await db.run("UPDATE comments SET is_pinned = 0 WHERE video_id = ?", [comment.video_id]);
+  }
+  await db.run("UPDATE comments SET is_pinned = ? WHERE id = ?", [nextPinned, commentId]);
+  return { success: true, isPinned: nextPinned === 1, status: 200 };
 }
 
 // src/middleware/upload.ts
@@ -5672,7 +5701,7 @@ async function createServerApp() {
     try {
       const user = req2.user;
       const idempotencyKey = req2.headers["idempotency-key"] || req2.body.idempotencyKey;
-      const { title, description, category, videoUrl, mediaUrl, thumbnailUrl, mediaType, isPremium, priceCoins } = req2.body;
+      const { title, description, category, videoUrl, mediaUrl, mediaUrls, thumbnailUrl, mediaType, isPremium, priceCoins } = req2.body;
       let safeIsPremium = false;
       let safePriceCoins = null;
       if (isPremium) {
@@ -5717,6 +5746,7 @@ async function createServerApp() {
         description: (description || "").trim(),
         category: safeCategory,
         videoUrl: targetMediaUrl,
+        mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : void 0,
         thumbnailUrl: (thumbnailUrl || "").trim(),
         mediaType: safeMediaType,
         idempotencyKey: idempotencyKey ? String(idempotencyKey).trim() : void 0,
@@ -6064,6 +6094,18 @@ async function createServerApp() {
     } catch (err) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || "Error al resonar con el comentario." });
+    }
+  });
+  app.post("/api/comments/:id/pin", requireAuth, async (req2, res) => {
+    try {
+      const result = await togglePinComment(
+        req2.params.id,
+        req2.user.id,
+        req2.user.role === "admin"
+      );
+      res.status(result.status).json(result);
+    } catch (err) {
+      res.status(500).json({ error: "Error al fijar comentario." });
     }
   });
   app.post("/api/tarotistas/apply", requireAuth, async (req2, res) => {

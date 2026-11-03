@@ -581,6 +581,11 @@ export const App: React.FC = () => {
                   }}
                   onOpenAuthModal={() => setShowAuthModal(true)}
                   onOpenCreatePost={() => setShowCreatePostModal(true)}
+                  onSelectHashtag={(tag) => {
+                    setSearchQuery(tag);
+                    setSelectedTarotistaId(null);
+                    setActiveTab('explore');
+                  }}
                 />
               )}
 

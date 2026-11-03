@@ -95,8 +95,12 @@ export async function getFeedPosts(opts: FeedOptions = {}): Promise<FeedResult> 
     if (!opts.currentUserId) {
       return { items: [], nextCursor: null, hasMore: false };
     }
-    conditions.push('tarotista_id IN (SELECT following_id FROM follows WHERE follower_id = ?)');
-    params.push(opts.currentUserId);
+    conditions.push(`(
+      tarotista_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+      OR tarotista_id IN (SELECT id FROM tarotista_profiles WHERE user_id IN (SELECT following_id FROM follows WHERE follower_id = ?))
+      OR tarotista_id IN (SELECT user_id FROM tarotista_profiles WHERE id IN (SELECT following_id FROM follows WHERE follower_id = ?))
+    )`);
+    params.push(opts.currentUserId, opts.currentUserId, opts.currentUserId);
   } else if (opts.category && opts.category !== 'Para ti') {
     conditions.push('category = ?');
     params.push(opts.category);
@@ -154,6 +158,7 @@ export async function getFeedPosts(opts: FeedOptions = {}): Promise<FeedResult> 
     post.hasUnlocked = hasUnlocked;
     if (!hasUnlocked) {
       post.videoUrl = ''; // Ocultar URL original del contenido exclusivo
+      post.mediaUrls = undefined;
     }
 
     return post;
@@ -177,6 +182,7 @@ export interface CreatePostParams {
   description?: string;
   category: string;
   videoUrl: string;
+  mediaUrls?: string[];
   thumbnailUrl?: string;
   mediaType: 'video' | 'image';
   idempotencyKey?: string;
@@ -202,14 +208,15 @@ export async function createPost(params: CreatePostParams): Promise<{ post: Vide
   const now = new Date().toISOString();
   const isPrem = !!params.isPremium;
   const price = isPrem && typeof params.priceCoins === 'number' && params.priceCoins > 0 ? Math.floor(params.priceCoins) : null;
+  const mediaUrlsJson = Array.isArray(params.mediaUrls) && params.mediaUrls.length > 0 ? JSON.stringify(params.mediaUrls) : null;
 
   await db.run(`
     INSERT INTO videos (
       id, tarotista_id, tarotista_name, tarotista_avatar, is_verified,
-      title, video_url, thumbnail_url, category, likes, comments_count,
+      title, video_url, media_urls, thumbnail_url, category, likes, comments_count,
       shares_count, sound_title, is_premium, is_exclusive, price_coins, media_type,
       description, is_deleted, idempotency_key, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, 0, ?, ?)
   `, [
     id,
     params.authorId,
@@ -218,6 +225,7 @@ export async function createPost(params: CreatePostParams): Promise<{ post: Vide
     params.isVerified ? 1 : 0,
     params.title,
     params.videoUrl,
+    mediaUrlsJson,
     params.thumbnailUrl || (params.mediaType === 'image' ? params.videoUrl : ''),
     params.category || 'Tarot',
     params.mediaType === 'video' ? 'Audio Original' : 'Visual Sagrada',
@@ -2179,5 +2187,39 @@ export async function searchSocialNetwork(query: string, currentUserId?: string)
     hashtags,
   };
 }
+
+export async function togglePinComment(
+  commentId: string,
+  userId: string,
+  isAdmin = false
+): Promise<{ success: boolean; isPinned?: boolean; error?: string; status: number }> {
+  const db = await getDb();
+  const comment = await db.get<any>('SELECT * FROM comments WHERE id = ? AND is_deleted = 0', [commentId]);
+  if (!comment) {
+    return { success: false, error: 'Comentario no encontrado.', status: 404 };
+  }
+
+  const video = await db.get<any>('SELECT * FROM videos WHERE id = ?', [comment.video_id]);
+  if (!video) {
+    return { success: false, error: 'Publicación no encontrada.', status: 404 };
+  }
+
+  const tarProfile = await db.get<any>('SELECT id FROM tarotista_profiles WHERE user_id = ?', [userId]);
+  const isPostAuthor = video.tarotista_id === userId || (tarProfile && video.tarotista_id === tarProfile.id);
+
+  if (!isPostAuthor && !isAdmin) {
+    return { success: false, error: 'Solo el autor de la visión puede fijar un comentario en su oráculo.', status: 403 };
+  }
+
+  const nextPinned = comment.is_pinned ? 0 : 1;
+  if (nextPinned === 1) {
+    // Desfijar otros comentarios de la misma publicación para dejar el fijado en la cima
+    await db.run('UPDATE comments SET is_pinned = 0 WHERE video_id = ?', [comment.video_id]);
+  }
+  await db.run('UPDATE comments SET is_pinned = ? WHERE id = ?', [nextPinned, commentId]);
+
+  return { success: true, isPinned: nextPinned === 1, status: 200 };
+}
+
 
 

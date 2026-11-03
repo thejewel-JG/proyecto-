@@ -77,6 +77,7 @@ import {
   deleteProfileHighlight,
   togglePinPost,
   toggleCommentLike,
+  togglePinComment,
   getPublicUserProfile,
   applyForTarotistaKyc,
   searchSocialNetwork,
@@ -479,7 +480,7 @@ export async function createServerApp() {
     try {
       const user = req.user!;
       const idempotencyKey = (req.headers['idempotency-key'] as string) || req.body.idempotencyKey;
-      const { title, description, category, videoUrl, mediaUrl, thumbnailUrl, mediaType, isPremium, priceCoins } = req.body;
+      const { title, description, category, videoUrl, mediaUrl, mediaUrls, thumbnailUrl, mediaType, isPremium, priceCoins } = req.body;
 
       let safeIsPremium = false;
       let safePriceCoins: number | null = null;
@@ -531,6 +532,7 @@ export async function createServerApp() {
         description: (description || '').trim(),
         category: safeCategory,
         videoUrl: targetMediaUrl,
+        mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : undefined,
         thumbnailUrl: (thumbnailUrl || '').trim(),
         mediaType: safeMediaType,
         idempotencyKey: idempotencyKey ? String(idempotencyKey).trim() : undefined,
@@ -933,7 +935,7 @@ export async function createServerApp() {
     }
   });
 
-  // 10.5 Resonancia (Like) en Comentarios Individuales
+  // 10.5 Resonancia (Like) y Fijado en Comentarios Individuales
   app.post('/api/comments/:id/like', requireAuth, async (req, res) => {
     try {
       const result = await toggleCommentLike(req.params.id, req.user!.id);
@@ -941,6 +943,19 @@ export async function createServerApp() {
     } catch (err: any) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || 'Error al resonar con el comentario.' });
+    }
+  });
+
+  app.post('/api/comments/:id/pin', requireAuth, async (req, res) => {
+    try {
+      const result = await togglePinComment(
+        req.params.id,
+        req.user!.id,
+        req.user!.role === 'admin'
+      );
+      res.status(result.status).json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al fijar comentario.' });
     }
   });
 

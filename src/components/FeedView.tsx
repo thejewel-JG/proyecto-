@@ -15,6 +15,7 @@ import {
 } from './EsotericIcons';
 
 interface FeedViewProps {
+  videos?: Video[];
   currentUser: User | null;
   tarotistaProfiles: TarotistaProfile[];
   activeCategory?: Category;
@@ -26,6 +27,7 @@ interface FeedViewProps {
   onOpenWallet: () => void;
   onOpenAuthModal?: () => void;
   onOpenCreatePost?: () => void;
+  onSelectHashtag?: (tag: string) => void;
 }
 
 export const FeedView: React.FC<FeedViewProps> = ({
@@ -39,6 +41,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onOpenWallet,
   onOpenAuthModal,
   onOpenCreatePost,
+  onSelectHashtag,
 }) => {
   // Feed posts state with cursor pagination
   const [posts, setPosts] = useState<Video[]>([]);
@@ -49,11 +52,15 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [videoProgress, setVideoProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState(false);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sendingShareToId, setSendingShareToId] = useState<string | null>(null);
   const [heartAnim, setHeartAnim] = useState<{ x: number; y: number; id: number } | null>(null);
 
   // Stories state
@@ -267,10 +274,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
   }, [currentVideo?.tarotistaId, checkRelationship]);
 
-  // Control de reproducción de vídeo
+  // Control de reproducción de vídeo y reinicio de carrusel
   useEffect(() => {
     setMediaError(null);
     setIsPlaying(true);
+    setCarouselIndex(0);
+    setVideoProgress(0);
 
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
@@ -491,17 +500,92 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!currentVideo) return;
+    setShowShareModal(true);
+  };
+
+  const handleCopyShareLink = () => {
+    if (!currentVideo) return;
     const shareUrl = `${window.location.origin}/?post=${currentVideo.id}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(shareUrl).then(() => {
         setCopyToast(true);
+        setShowShareModal(false);
         setTimeout(() => setCopyToast(false), 2500);
-      }).catch(() => {
-        prompt('Copia el enlace de esta publicación:', shareUrl);
       });
     } else {
       prompt('Copia el enlace de esta publicación:', shareUrl);
     }
+  };
+
+  const handleSendPostViaDm = async (targetUserId: string) => {
+    if (!currentUser) {
+      setShowShareModal(false);
+      onOpenAuthModal?.();
+      return;
+    }
+    if (!currentVideo || sendingShareToId) return;
+    setSendingShareToId(targetUserId);
+    try {
+      const convRes = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId }),
+      });
+      if (!convRes.ok) throw new Error('Error al abrir conversación');
+      const convData = await convRes.json();
+      const convId = convData.conversation?.id;
+      if (!convId) throw new Error('Conversación inválida');
+
+      const shareUrl = `${window.location.origin}/?post=${currentVideo.id}`;
+      const msgContent = `🔮 Te comparto esta visión de @${currentVideo.tarotistaName}: "${currentVideo.title}"\n${shareUrl}`;
+      await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: msgContent,
+          clientMessageId: `share_post_${Date.now()}`,
+        }),
+      });
+
+      setShowShareModal(false);
+      setCopyToast(true);
+      setTimeout(() => setCopyToast(false), 2500);
+    } catch {
+      alert('No se pudo compartir la visión por mensaje directo.');
+    } finally {
+      setSendingShareToId(null);
+    }
+  };
+
+  const handleScrubVideo = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!videoRef.current || !videoRef.current.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const pct = clickX / rect.width;
+    videoRef.current.currentTime = pct * videoRef.current.duration;
+    setVideoProgress(pct * 100);
+  };
+
+  const renderTextWithHashtags = (text: string) => {
+    const parts = text.split(/(#[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9_]+)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('#')) {
+        return (
+          <span
+            key={idx}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectHashtag?.(part);
+            }}
+            className="text-[#D4AF37] font-bold hover:underline cursor-pointer"
+          >
+            {part}
+          </span>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
   };
 
   // 0. Estado de Publicación no encontrada o retirada (Enlace Directo)
@@ -680,12 +764,64 @@ export const FeedView: React.FC<FeedViewProps> = ({
               <div className="absolute inset-0 bg-gradient-to-t from-[#0B0911] via-[#0B0911]/80 to-transparent" />
             </div>
           ) : currentVideo.mediaType === 'image' ? (
-            <img
-              key={currentVideo.id}
-              src={currentVideo.videoUrl}
-              alt={currentVideo.title}
-              className="w-full h-full object-cover transition-all duration-300"
-            />
+            currentVideo.mediaUrls && currentVideo.mediaUrls.length > 1 ? (
+              <div className="relative w-full h-full flex items-center justify-center">
+                <img
+                  key={`${currentVideo.id}_${carouselIndex}`}
+                  src={currentVideo.mediaUrls[carouselIndex] || currentVideo.videoUrl}
+                  alt={currentVideo.title}
+                  className="w-full h-full object-cover transition-all duration-300"
+                />
+                {/* Controles de Carrusel de Cartas */}
+                {carouselIndex > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCarouselIndex(prev => Math.max(0, prev - 1));
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/60 border border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:scale-110 transition-transform"
+                  >
+                    ‹
+                  </button>
+                )}
+                {carouselIndex < currentVideo.mediaUrls.length - 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCarouselIndex(prev => Math.min((currentVideo.mediaUrls?.length || 1) - 1, prev + 1));
+                    }}
+                    className="absolute right-16 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/60 border border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:scale-110 transition-transform"
+                  >
+                    ›
+                  </button>
+                )}
+                {/* Indicadores de página del carrusel */}
+                <div className="absolute top-14 right-3 z-30 bg-black/60 backdrop-blur-md border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                  🎴 {carouselIndex + 1}/{currentVideo.mediaUrls.length}
+                </div>
+                <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-black/40 px-2.5 py-1 rounded-full">
+                  {currentVideo.mediaUrls.map((_, idx) => (
+                    <span
+                      key={idx}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCarouselIndex(idx);
+                      }}
+                      className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                        idx === carouselIndex ? 'w-4 bg-[#D4AF37]' : 'w-1.5 bg-white/40'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <img
+                key={currentVideo.id}
+                src={currentVideo.videoUrl}
+                alt={currentVideo.title}
+                className="w-full h-full object-cover transition-all duration-300"
+              />
+            )
           ) : (
             <video
               ref={videoRef}
@@ -697,6 +833,11 @@ export const FeedView: React.FC<FeedViewProps> = ({
               muted={isMuted}
               playsInline
               preload="metadata"
+              onTimeUpdate={() => {
+                if (videoRef.current && videoRef.current.duration) {
+                  setVideoProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+                }
+              }}
               onError={() => {
                 setMediaError('Este formato no puede reproducirse en este dispositivo. Formatos admitidos: MP4 H.264, WebM.');
               }}
@@ -976,12 +1117,12 @@ export const FeedView: React.FC<FeedViewProps> = ({
             </div>
 
             <p className="text-xs text-[#F7E7C1]/95 line-clamp-2 leading-relaxed drop-shadow">
-              {currentVideo.title}
+              {renderTextWithHashtags(currentVideo.title)}
             </p>
 
             {currentVideo.description && (
               <p className="text-[11px] text-[#F7E7C1]/70 line-clamp-1 italic">
-                {currentVideo.description}
+                {renderTextWithHashtags(currentVideo.description)}
               </p>
             )}
 
@@ -992,12 +1133,29 @@ export const FeedView: React.FC<FeedViewProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Barra de Progreso Interactiva (Scrubber estilo TikTok) para Vídeos */}
+          {isUnlocked && currentVideo.mediaType === 'video' && (
+            <div
+              onClick={handleScrubVideo}
+              className="absolute bottom-0 left-0 right-0 h-2.5 z-30 flex items-end cursor-pointer group/scrub"
+              title="Toca para avanzar o retroceder en el vídeo"
+            >
+              <div className="w-full h-1 group-hover/scrub:h-2 bg-white/20 transition-all overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] shadow-[0_0_8px_#D4AF37] transition-all duration-75"
+                  style={{ width: `${videoProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Drawer de Comentarios Reales con hilos de 1 nivel */}
         <CommentsDrawer
           isOpen={showCommentsModal}
           videoId={currentVideo?.id || ''}
+          postAuthorId={currentVideo?.tarotistaId}
           currentUser={currentUser}
           onClose={() => setShowCommentsModal(false)}
           onOpenAuthModal={() => {
@@ -1011,6 +1169,79 @@ export const FeedView: React.FC<FeedViewProps> = ({
           }}
           onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
         />
+
+        {/* Modal «Expandir por el Cosmos» (Compartir por Mensaje Directo / WhatsApp / Enlace) */}
+        {showShareModal && currentVideo && (
+          <div
+            className="absolute inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-xl flex flex-col justify-end animate-in slide-in-from-bottom duration-200"
+            onClick={() => setShowShareModal(false)}
+          >
+            <div
+              className="bg-[#140D21] border-t border-[#D4AF37]/40 rounded-t-3xl p-5 space-y-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2 text-[#D4AF37]">
+                  <ShootingStarIcon className="w-5 h-5" />
+                  <h4 className="font-cinzel text-sm font-bold text-[#F7E7C1]">
+                    Expandir Visión por el Cosmos
+                  </h4>
+                </div>
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="text-[#A09BAE] hover:text-white text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Enviar rápido por Mensaje Directo a Videntes o Contactos */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]/80 block">
+                  ✦ Enviar por Susurro Privado (DM) en 1 toque
+                </span>
+                <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-1">
+                  {tarotistaProfiles.slice(0, 8).map((tar) => (
+                    <button
+                      key={tar.id}
+                      onClick={() => handleSendPostViaDm(tar.userId || tar.id)}
+                      disabled={sendingShareToId === (tar.userId || tar.id)}
+                      className="flex flex-col items-center gap-1 shrink-0 group"
+                    >
+                      <div className="w-12 h-12 rounded-full p-0.5 bg-gradient-to-tr from-[#D4AF37] to-[#5A2D82] group-hover:scale-105 transition-transform">
+                        <img src={tar.avatar} alt={tar.professionalName} className="w-full h-full rounded-full object-cover" />
+                      </div>
+                      <span className="text-[10px] text-[#F7E7C1] max-w-[64px] truncate">
+                        {tar.professionalName.split(' ')[0]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Acciones de enlace y redes externas */}
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <button
+                  onClick={handleCopyShareLink}
+                  className="bg-[#2E1B47] hover:bg-[#5A2D82] border border-[#D4AF37]/40 text-[#F7E7C1] py-2.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <span>🔗</span>
+                  <span>Copiar Vínculo</span>
+                </button>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`🔮 Mira esta visión en KABALY: "${currentVideo.title}" ${window.location.origin}/?post=${currentVideo.id}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setShowShareModal(false)}
+                  className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-200 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <span>💬</span>
+                  <span>WhatsApp</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modales de Stories */}

@@ -5,6 +5,7 @@ import { SacredFlameIcon, CrystalBallIcon } from './EsotericIcons';
 interface CommentsDrawerProps {
   isOpen: boolean;
   videoId: string;
+  postAuthorId?: string;
   currentUser: User | null;
   onClose: () => void;
   onOpenAuthModal: () => void;
@@ -15,6 +16,7 @@ interface CommentsDrawerProps {
 export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
   isOpen,
   videoId,
+  postAuthorId,
   currentUser,
   onClose,
   onOpenAuthModal,
@@ -22,6 +24,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
   onOpenUserProfile,
 }) => {
   const [comments, setComments] = useState<Comment[]>([]);
+  const [sortBy, setSortBy] = useState<'resonated' | 'recent'>('resonated');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,6 +132,22 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
     }
   };
 
+  const handleTogglePinComment = async (commentId: string) => {
+    try {
+      const res = await fetch(`/api/comments/${encodeURIComponent(commentId)}/pin`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await fetchComments();
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch {
+      alert('Error al fijar comentario.');
+    }
+  };
+
   const handleDelete = async (commentId: string) => {
     if (!confirm('¿Deseas eliminar este comentario?')) return;
     try {
@@ -159,21 +178,52 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
 
   if (!isOpen) return null;
 
+  const isPostOwner = currentUser && (currentUser.id === postAuthorId || currentUser.role === 'admin');
+  const sortedComments = [...comments].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return Number(!!b.isPinned) - Number(!!a.isPinned);
+    if (sortBy === 'resonated') {
+      return (b.likesCount || 0) - (a.likesCount || 0);
+    }
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
   return (
     <div className="absolute inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-xl flex flex-col justify-end animate-in slide-in-from-bottom duration-300">
       <div className="bg-[#140D21] border-t border-[#D4AF37]/35 rounded-t-3xl p-4 sm:p-5 h-[80%] max-h-[600px] flex flex-col justify-between shadow-2xl">
-        {/* Header */}
+        {/* Header con selector de orden */}
         <div className="flex justify-between items-center pb-3 border-b border-white/10">
           <div className="flex items-center gap-2 text-[#D4AF37]">
             <CrystalBallIcon className="w-5 h-5" filled />
             <span className="font-cinzel text-sm text-[#F7E7C1] font-bold">Oráculo de Comentarios</span>
           </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-full text-[#F7E7C1]/60 hover:text-[#F7E7C1] hover:bg-white/10 flex items-center justify-center transition-colors"
-          >
-            ✕
-          </button>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-[#0B0911] border border-white/10 rounded-full p-0.5 text-[10px]">
+              <button
+                onClick={() => setSortBy('resonated')}
+                className={`px-2 py-0.5 rounded-full font-bold transition ${
+                  sortBy === 'resonated' ? 'bg-[#D4AF37] text-[#0B0911]' : 'text-[#A09BAE] hover:text-white'
+                }`}
+              >
+                🔥 Resonados
+              </button>
+              <button
+                onClick={() => setSortBy('recent')}
+                className={`px-2 py-0.5 rounded-full font-bold transition ${
+                  sortBy === 'recent' ? 'bg-[#D4AF37] text-[#0B0911]' : 'text-[#A09BAE] hover:text-white'
+                }`}
+              >
+                ⏳ Recientes
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-7 h-7 rounded-full text-[#F7E7C1]/60 hover:text-[#F7E7C1] hover:bg-white/10 flex items-center justify-center transition-colors"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Lista de comentarios */}
@@ -193,7 +243,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                 Reintentar
               </button>
             </div>
-          ) : comments.length === 0 ? (
+          ) : sortedComments.length === 0 ? (
             <div className="text-center py-12 space-y-2">
               <div className="w-12 h-12 rounded-full bg-[#2E1B47]/40 border border-[#D4AF37]/30 flex items-center justify-center mx-auto text-[#D4AF37]">
                 <CrystalBallIcon className="w-6 h-6" />
@@ -204,7 +254,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
               </p>
             </div>
           ) : (
-            comments.map((comment) => (
+            sortedComments.map((comment) => (
               <div key={comment.id} className="space-y-2">
                 {/* Comentario Raíz */}
                 <div className="flex items-start gap-2.5 group">
@@ -220,9 +270,15 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                     className="w-8 h-8 rounded-full object-cover border border-[#D4AF37]/40 flex-shrink-0 cursor-pointer hover:scale-105 transition"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="bg-[#0B0911]/70 border border-white/10 rounded-2xl p-2.5 text-xs flex items-start justify-between gap-2">
+                    <div
+                      className={`rounded-2xl p-2.5 text-xs flex items-start justify-between gap-2 ${
+                        comment.isPinned
+                          ? 'bg-[#2E1B47]/50 border border-[#D4AF37]/60'
+                          : 'bg-[#0B0911]/70 border border-white/10'
+                      }`}
+                    >
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
                           <span
                             onClick={() => {
                               if (onOpenUserProfile) {
@@ -234,6 +290,16 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                           >
                             {comment.authorName}
                           </span>
+                          {postAuthorId && comment.authorId === postAuthorId && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-[#D4AF37] text-[#0B0911] text-[8px] font-bold uppercase">
+                              ✦ Creador
+                            </span>
+                          )}
+                          {comment.isPinned && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-[#1A1026] border border-[#D4AF37]/50 text-[#D4AF37] text-[8px] font-bold">
+                              ✦ Fijado
+                            </span>
+                          )}
                           <span className="text-[9px] text-[#7A7280]">
                             {new Date(comment.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                           </span>
@@ -266,6 +332,14 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                           className="hover:text-[#D4AF37] font-semibold transition-colors flex items-center gap-0.5"
                         >
                           <span>✦ Responder</span>
+                        </button>
+                      )}
+                      {isPostOwner && !comment.isDeleted && (
+                        <button
+                          onClick={() => handleTogglePinComment(comment.id)}
+                          className="hover:text-[#D4AF37] transition-colors text-[#D4AF37]/80 font-semibold"
+                        >
+                          {comment.isPinned ? 'Desfijar' : '✦ Fijar arriba'}
                         </button>
                       )}
                       {(currentUser?.id === comment.authorId || currentUser?.role === 'admin') && !comment.isDeleted && (

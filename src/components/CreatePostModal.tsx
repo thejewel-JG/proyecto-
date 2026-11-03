@@ -27,8 +27,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<Category>('Tarot');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('video');
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => `idemp_${Date.now()}_${Math.random().toString(36).slice(2)}`);
   
@@ -44,38 +44,43 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   if (!isOpen) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList: File[] = e.target.files ? Array.from<File>(e.target.files) : [];
+    if (fileList.length === 0) return;
 
-    // Detectar tipo
-    const isVideo = file.type.startsWith('video');
-    const isImage = file.type.startsWith('image');
+    const firstFile = fileList[0];
+    const isVideo = firstFile.type.startsWith('video');
+    const isImage = firstFile.type.startsWith('image');
 
     if (!isVideo && !isImage) {
       setErrorMessage('Formato no admitido. Formatos válidos: JPG, PNG, WEBP, GIF, MP4, WEBM, MOV.');
       return;
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-      setErrorMessage('El archivo supera el tamaño máximo permitido de 50MB.');
+    if (isVideo && fileList.length > 1) {
+      setErrorMessage('Para publicaciones de vídeo selecciona un único archivo. Para carruseles puedes elegir hasta 10 imágenes.');
       return;
     }
 
+    const validFiles = fileList.slice(0, 10);
+    for (const f of validFiles) {
+      if (f.size > 50 * 1024 * 1024) {
+        setErrorMessage(`El archivo ${f.name} supera el tamaño máximo permitido de 50MB.`);
+        return;
+      }
+    }
+
     setErrorMessage('');
-    setSelectedFile(file);
+    setSelectedFiles(validFiles);
     setMediaType(isVideo ? 'video' : 'image');
 
-    // Generar previsualización local
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    previewUrls.forEach(u => URL.revokeObjectURL(u));
+    setPreviewUrls(validFiles.map(f => URL.createObjectURL(f)));
   };
 
   const handleClearFile = () => {
-    setSelectedFile(null);
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
+    setSelectedFiles([]);
+    previewUrls.forEach(u => URL.revokeObjectURL(u));
+    setPreviewUrls([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -83,8 +88,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) {
-      setErrorMessage('Por favor, selecciona una foto o vídeo desde tu dispositivo.');
+    if (selectedFiles.length === 0) {
+      setErrorMessage('Por favor, selecciona una foto, carrusel de fotos o vídeo desde tu dispositivo.');
       return;
     }
 
@@ -97,18 +102,27 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     setUploadStatus('uploading');
 
     try {
-      // 1. Subir archivo
-      const formData = new FormData();
-      formData.append('file', selectedFile);
+      // 1. Subir todos los archivos seleccionados (1 vídeo o de 1 a 10 imágenes para carrusel)
+      const uploadedUrls: string[] = [];
+      let detectedType: 'image' | 'video' = mediaType;
+      let firstThumb = '';
 
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      for (const file of selectedFiles) {
+        const formData = new FormData();
+        formData.append('file', file);
 
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok) {
-        throw new Error(uploadData.error || 'Fallo al subir el archivo multimedia.');
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok) {
+          throw new Error(uploadData.error || 'Fallo al subir el archivo multimedia.');
+        }
+        uploadedUrls.push(uploadData.url);
+        detectedType = uploadData.mediaType || detectedType;
+        if (!firstThumb) firstThumb = uploadData.thumbnailUrl || uploadData.url;
       }
 
       setUploadStatus('saving');
@@ -124,9 +138,10 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           title: title.trim(),
           description: description.trim(),
           category,
-          videoUrl: uploadData.url,
-          thumbnailUrl: isExclusive ? (coverUrl.trim() || uploadData.thumbnailUrl || uploadData.url) : (uploadData.thumbnailUrl || ''),
-          mediaType: uploadData.mediaType,
+          videoUrl: uploadedUrls[0],
+          mediaUrls: uploadedUrls.length > 1 ? uploadedUrls : undefined,
+          thumbnailUrl: isExclusive ? (coverUrl.trim() || firstThumb) : firstThumb,
+          mediaType: detectedType,
           idempotencyKey,
           isPremium: isExclusive,
           priceCoins: isExclusive ? Math.max(1, priceCoins) : null,
@@ -192,10 +207,10 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           {/* File Picker & Preview */}
           <div>
             <label className="block text-[11px] font-semibold text-[#D4AF37] uppercase tracking-wider mb-1.5">
-              Foto o Vídeo Reel desde tu dispositivo
+              Vídeo Reel o Carrusel de Fotos (1 a 10 Cartas)
             </label>
 
-            {!previewUrl ? (
+            {previewUrls.length === 0 ? (
               <div
                 onClick={() => fileInputRef.current?.click()}
                 className="border-2 border-dashed border-[#D4AF37]/40 hover:border-[#D4AF37] rounded-2xl p-6 text-center cursor-pointer transition-colors bg-[#0B0911]/50 flex flex-col items-center justify-center gap-2 group"
@@ -203,20 +218,33 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 <div className="w-12 h-12 rounded-full bg-[#5A2D82]/50 border border-[#D4AF37]/30 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <span className="material-symbols-outlined text-2xl text-[#D4AF37]">upload_file</span>
                 </div>
-                <p className="text-xs text-[#F7E7C1] font-bold">Toca para seleccionar foto o vídeo</p>
+                <p className="text-xs text-[#F7E7C1] font-bold">Toca para seleccionar vídeo o hasta 10 fotos</p>
                 <span className="text-[10px] text-[#A7A7A7] max-w-xs leading-relaxed">
                   Formatos válidos: MP4, WEBM, MOV, JPG, PNG, WEBP (máx. 50MB).
                 </span>
                 <span className="text-[9px] text-[#D4AF37]/70 italic mt-1">
-                  Sin transcodificación: se reproducirá en su formato original.
+                  Puedes seleccionar varias imágenes a la vez para explicar una tirada paso a paso.
                 </span>
               </div>
             ) : (
               <div className="relative rounded-2xl overflow-hidden border border-[#D4AF37]/40 bg-black aspect-[9/12] max-h-64 mx-auto flex items-center justify-center">
                 {mediaType === 'image' ? (
-                  <img src={previewUrl} alt="Vista previa" className="w-full h-full object-contain" />
+                  previewUrls.length > 1 ? (
+                    <div className="w-full h-full flex items-center gap-2 overflow-x-auto p-2">
+                      {previewUrls.map((u, idx) => (
+                        <div key={idx} className="relative h-full aspect-[3/4] shrink-0 rounded-xl overflow-hidden border border-[#D4AF37]/40">
+                          <img src={u} alt={`Carta ${idx + 1}`} className="w-full h-full object-cover" />
+                          <span className="absolute top-1.5 left-1.5 bg-black/75 text-[#D4AF37] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                            {idx + 1}/{previewUrls.length}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <img src={previewUrls[0]} alt="Vista previa" className="w-full h-full object-contain" />
+                  )
                 ) : (
-                  <video src={previewUrl} controls muted playsInline className="w-full h-full object-contain" />
+                  <video src={previewUrls[0]} controls muted playsInline className="w-full h-full object-contain" />
                 )}
                 <button
                   type="button"
@@ -227,7 +255,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                   <span className="material-symbols-outlined text-sm">delete</span>
                 </button>
                 <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-[#0B0911]/80 border border-[#D4AF37]/40 text-[9px] uppercase font-bold text-[#D4AF37]">
-                  {mediaType === 'image' ? 'Foto' : 'Vídeo'} seleccionado
+                  {mediaType === 'image'
+                    ? previewUrls.length > 1
+                      ? `Carrusel (${previewUrls.length} fotos)`
+                      : 'Foto seleccionada'
+                    : 'Vídeo seleccionado'}
                 </span>
               </div>
             )}
@@ -235,6 +267,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
               onChange={handleFileChange}
               className="hidden"
@@ -353,7 +386,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           <div className="pt-2">
             <button
               type="submit"
-              disabled={uploadStatus === 'uploading' || uploadStatus === 'saving' || !selectedFile}
+              disabled={uploadStatus === 'uploading' || uploadStatus === 'saving' || selectedFiles.length === 0}
               className="w-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold py-3.5 rounded-full text-xs uppercase tracking-widest gold-glow hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
             >
               {uploadStatus === 'uploading' && (

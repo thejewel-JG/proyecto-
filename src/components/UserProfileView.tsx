@@ -84,7 +84,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onSelectVideo,
   onSelectConsultation,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'publicaciones' | 'guardados' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
+  const [activeSubTab, setActiveSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingPost, setEditingPost] = useState<Video | null>(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
@@ -349,6 +349,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [editRisingSign, setEditRisingSign] = useState(currentUser.risingSign || '');
   const [editRulingArcana, setEditRulingArcana] = useState(currentUser.rulingArcana || '');
   const [editSpiritualGift, setEditSpiritualGift] = useState(currentUser.spiritualGift || '');
+  const [editIsPrivate, setEditIsPrivate] = useState(!!currentUser.isPrivate);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -545,9 +546,16 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       risingSign: editRisingSign,
       rulingArcana: editRulingArcana,
       spiritualGift: editSpiritualGift,
+      isPrivate: editIsPrivate,
     });
     setShowEditProfileModal(false);
   };
+
+  // Estadísticas del Creador ("Visión del Oráculo")
+  const totalLikesReceived = myPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
+  const totalCommentsReceived = myPosts.reduce((sum, p) => sum + (p.commentsCount || 0), 0);
+  const estimatedReach = totalLikesReceived * 14 + totalCommentsReceived * 28 + relationshipStats.followersCount * 12 + myPosts.length * 45;
+  const topPerformingPosts = [...myPosts].sort((a, b) => (b.likes + b.commentsCount * 2) - (a.likes + a.commentsCount * 2)).slice(0, 3);
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6 pb-12">
@@ -800,6 +808,18 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab('estadisticas')}
+          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
+            activeSubTab === 'estadisticas'
+              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
+              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
+          }`}
+        >
+          <CrystalBallIcon className="w-4 h-4" />
+          <span>Visión del Oráculo</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('monedero')}
           className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
             activeSubTab === 'monedero'
@@ -1030,6 +1050,108 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           fetchRelationshipStats();
         }}
       />
+
+      {/* SUB-VIEW 2.5: Visión del Oráculo (Creator Studio & Estadísticas) */}
+      {activeSubTab === 'estadisticas' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="bg-gradient-to-br from-[#1A1026] via-[#120D1D] to-[#2E1B47]/40 border border-[#D4AF37]/35 rounded-3xl p-6 space-y-5 shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-4">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] block">
+                  ✦ Creator Studio Esotérico
+                </span>
+                <h3 className="font-cinzel text-lg font-bold text-[#F7E7C1]">
+                  Visión del Oráculo · Rendimiento de tu Altar
+                </h3>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-[#0B0911]/80 border border-[#D4AF37]/30 text-[10px] text-[#D4AF37] font-bold">
+                {currentUser.isPrivate ? '🔒 Santuario Privado' : '🌍 Altar Público'}
+              </span>
+            </div>
+
+            {/* KPIs Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-[#0B0911]/70 border border-[#D4AF37]/25 rounded-2xl p-4 space-y-1">
+                <div className="flex items-center justify-between text-[#D4AF37]">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#A09BAE]">Alcance Cósmico</span>
+                  <CrystalBallIcon className="w-4 h-4" />
+                </div>
+                <p className="font-cinzel text-2xl font-bold text-[#F7E7C1]">{estimatedReach.toLocaleString()}</p>
+                <span className="text-[10px] text-emerald-400 block">✦ Almas impactadas</span>
+              </div>
+
+              <div className="bg-[#0B0911]/70 border border-[#D4AF37]/25 rounded-2xl p-4 space-y-1">
+                <div className="flex items-center justify-between text-[#D4AF37]">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#A09BAE]">Llamas Sagradas</span>
+                  <SacredFlameIcon className="w-4 h-4" filled />
+                </div>
+                <p className="font-cinzel text-2xl font-bold text-[#D4AF37]">{totalLikesReceived.toLocaleString()}</p>
+                <span className="text-[10px] text-[#A09BAE] block">En {myPosts.length} visiones</span>
+              </div>
+
+              <div className="bg-[#0B0911]/70 border border-[#D4AF37]/25 rounded-2xl p-4 space-y-1">
+                <div className="flex items-center justify-between text-[#D4AF37]">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#A09BAE]">Voces del Oráculo</span>
+                  <SolomonStarIcon className="w-4 h-4" />
+                </div>
+                <p className="font-cinzel text-2xl font-bold text-[#F7E7C1]">{totalCommentsReceived.toLocaleString()}</p>
+                <span className="text-[10px] text-[#A09BAE] block">Comentarios recibidos</span>
+              </div>
+
+              <div className="bg-[#0B0911]/70 border border-[#D4AF37]/25 rounded-2xl p-4 space-y-1">
+                <div className="flex items-center justify-between text-[#D4AF37]">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#A09BAE]">Comunidad</span>
+                  <ArcanaGrimoireIcon className="w-4 h-4" filled />
+                </div>
+                <p className="font-cinzel text-2xl font-bold text-[#D4AF37]">{relationshipStats.followersCount}</p>
+                <span className="text-[10px] text-[#A09BAE] block">Seguidores astrales</span>
+              </div>
+            </div>
+
+            {/* Top Performing Posts */}
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#D4AF37]">
+                🔥 Visiones con Mayor Resonancia Energética
+              </h4>
+              {topPerformingPosts.length === 0 ? (
+                <p className="text-xs text-[#A09BAE] italic">
+                  Publica tu primera visión en el feed para comenzar a medir la resonancia de tu comunidad.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {topPerformingPosts.map((post, idx) => (
+                    <div
+                      key={post.id}
+                      className="bg-[#0B0911]/80 border border-white/10 rounded-2xl p-3 flex items-center gap-3"
+                    >
+                      <div className="w-12 h-14 rounded-xl overflow-hidden bg-black shrink-0 border border-[#D4AF37]/30 relative">
+                        <img
+                          src={post.thumbnailUrl || post.videoUrl}
+                          alt={post.title}
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute top-0.5 left-0.5 bg-[#D4AF37] text-[#0B0911] text-[8px] font-bold px-1 rounded">
+                          #{idx + 1}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-[#F7E7C1] truncate">{post.title}</p>
+                        <span className="text-[10px] text-[#D4AF37] block">{post.category}</span>
+                        <div className="flex items-center gap-3 mt-1 text-[10px] text-[#A09BAE]">
+                          <span className="flex items-center gap-0.5 text-[#D4AF37]">
+                            ✦ {post.likes}
+                          </span>
+                          <span>🔮 {post.commentsCount}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUB-VIEW 3: Embedded Wallet View */}
       {activeSubTab === 'monedero' && (
@@ -1606,6 +1728,22 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Privacidad del Altar */}
+                <label className="flex items-center justify-between p-3 rounded-2xl bg-[#0B0911]/80 border border-[#D4AF37]/25 cursor-pointer hover:border-[#D4AF37]/50 transition-all mt-2">
+                  <div>
+                    <span className="text-xs font-bold text-[#F7E7C1] block">🔒 Modo Santuario Privado</span>
+                    <span className="text-[10px] text-[#A09BAE]">
+                      Muestra insignia de privacidad en tu altar y protege tu energía frente a visitantes externos
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editIsPrivate}
+                    onChange={(e) => setEditIsPrivate(e.target.checked)}
+                    className="w-4 h-4 accent-[#D4AF37]"
+                  />
+                </label>
               </div>
 
               <div className="flex gap-2 pt-3">
