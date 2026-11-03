@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LiveStream, User, Gift, GiftEvent, ChatMessage, TarotistaProfile } from '../types';
 
 interface LiveStreamViewProps {
@@ -25,6 +25,12 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
   onCallNextQueueUser,
 }) => {
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
+  const [confirmingGift, setConfirmingGift] = useState<Gift | null>(null);
+  const [isSendingGift, setIsSendingGift] = useState(false);
+  const [giftCatalog, setGiftCatalog] = useState<Gift[]>(gifts || []);
+  const [processedEvents] = useState<Set<string>>(() => new Set());
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'msg_1',
@@ -49,6 +55,99 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
   ]);
   const [chatInput, setChatInput] = useState('');
   const [activeGiftAnim, setActiveGiftAnim] = useState<GiftEvent | null>(null);
+
+  // Detectar preferencia de movimiento reducido
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Cargar catálogo de regalos oficial desde el servidor
+  useEffect(() => {
+    fetch('/api/gifts')
+      .then(res => res.json())
+      .then(data => {
+        if (data.gifts && Array.isArray(data.gifts)) {
+          setGiftCatalog(data.gifts);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Polling recuperable de eventos de regalo con deduplicación por transactionId
+  useEffect(() => {
+    let mounted = true;
+    const fetchGiftEvents = async () => {
+      try {
+        const res = await fetch(`/api/streams/${encodeURIComponent(stream.id)}/gifts?limit=20`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const events = data.events || [];
+
+        if (!mounted) return;
+
+        events.forEach((evt: any) => {
+          const key = evt.transactionId || evt.id;
+          if (!processedEvents.has(key)) {
+            processedEvents.add(key);
+
+            // Registro visible y permanente en el feed del chat
+            setChatMessages(prev => {
+              if (prev.some(m => m.id === `gift_${key}`)) return prev;
+              return [
+                ...prev,
+                {
+                  id: `gift_${key}`,
+                  channelId: stream.id,
+                  senderId: evt.senderId || 'anon',
+                  senderName: evt.senderName,
+                  senderAvatar: evt.senderAvatar,
+                  senderRole: 'cliente',
+                  text: `ha enviado un regalo: ${evt.giftName} (${evt.giftCost} 🪙)`,
+                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  isGift: true,
+                  giftIcon: evt.giftIcon,
+                }
+              ];
+            });
+
+            // Reproducir animación flotante solo para eventos recientes (< 15 segundos)
+            const eventAgeSec = (Date.now() - new Date(evt.timestamp || Date.now()).getTime()) / 1000;
+            if (eventAgeSec < 15) {
+              setActiveGiftAnim({
+                id: evt.id,
+                streamId: stream.id,
+                senderId: evt.senderId,
+                senderName: evt.senderName,
+                senderAvatar: evt.senderAvatar,
+                giftId: evt.giftId,
+                giftName: evt.giftName,
+                giftIcon: evt.giftIcon,
+                giftCost: evt.giftCost,
+                transactionId: evt.transactionId,
+                timestamp: evt.timestamp,
+              });
+              setTimeout(() => {
+                if (mounted) setActiveGiftAnim(null);
+              }, prefersReducedMotion ? 1500 : 3500);
+            }
+          }
+        });
+      } catch (e) {
+        // mecanismo recuperable: reintenta en el siguiente ciclo sin perder eventos ya cobrados
+      }
+    };
+
+    fetchGiftEvents();
+    const interval = setInterval(fetchGiftEvents, 4000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [stream.id, processedEvents, prefersReducedMotion]);
 
   if (!stream) {
     return (
@@ -86,48 +185,99 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
     setChatInput('');
   };
 
-  const handleSelectGift = (gift: Gift) => {
+  // Solicitar confirmación explícita con coste y acción antes de enviar
+  const handleInitiateGift = (gift: Gift) => {
+    if (currentUser.role === 'tarotista' && profile?.userId === currentUser.id) {
+      alert('No es posible enviarte regalos a ti mismo.');
+      return;
+    }
+
     if (currentUser.coinsBalance < gift.costCoins) {
       alert(`Saldo insuficiente. Necesitas ${gift.costCoins} monedas para enviar ${gift.name}.`);
       onOpenWallet();
       return;
     }
 
-    onSendGift(stream.id, gift.id);
-    setShowGiftDrawer(false);
+    setConfirmingGift(gift);
+  };
 
-    // Trigger visual gift animation float on screen
-    const giftEvt: GiftEvent = {
-      id: `evt_${Date.now()}`,
-      streamId: stream.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      giftName: gift.name,
-      giftIcon: gift.icon,
-      giftCost: gift.costCoins,
-      timestamp: new Date().toLocaleTimeString(),
-    };
-    setActiveGiftAnim(giftEvt);
+  const handleConfirmSendGift = async () => {
+    if (!confirmingGift || isSendingGift) return;
 
-    setChatMessages(prev => [
-      ...prev,
-      {
-        id: `msg_${Date.now()}`,
-        channelId: stream.id,
+    setIsSendingGift(true);
+    const idempotencyKey = `gift_send_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    try {
+      const res = await fetch(`/api/streams/${encodeURIComponent(stream.id)}/gift`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          giftId: confirmingGift.id,
+          idempotencyKey,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al procesar el envío del regalo.');
+      }
+
+      onSendGift(stream.id, confirmingGift.id);
+      setShowGiftDrawer(false);
+      setConfirmingGift(null);
+
+      // Descontar monedas en UI local inmediatamente
+      currentUser.coinsBalance = data.newBalance !== undefined ? data.newBalance : Math.max(0, currentUser.coinsBalance - confirmingGift.costCoins);
+
+      // Registrar evento en procesados para no duplicar
+      if (data.transactionId) {
+        processedEvents.add(data.transactionId);
+      }
+
+      const giftEvt: GiftEvent = {
+        id: `evt_${Date.now()}`,
+        streamId: stream.id,
         senderId: currentUser.id,
         senderName: currentUser.name,
         senderAvatar: currentUser.avatar,
-        senderRole: currentUser.role,
-        text: `ha enviado un regalo: ${gift.name} (${gift.costCoins} Monedas)`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isGift: true,
-        giftIcon: gift.icon,
-      }
-    ]);
+        giftId: confirmingGift.id,
+        giftName: confirmingGift.name,
+        giftIcon: confirmingGift.icon,
+        giftCost: confirmingGift.costCoins,
+        transactionId: data.transactionId,
+        timestamp: new Date().toLocaleTimeString(),
+      };
 
-    setTimeout(() => {
-      setActiveGiftAnim(null);
-    }, 3000);
+      setActiveGiftAnim(giftEvt);
+
+      // Conservar un registro visible en el chat
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `msg_gift_${data.transactionId || Date.now()}`,
+          channelId: stream.id,
+          senderId: currentUser.id,
+          senderName: currentUser.name,
+          senderAvatar: currentUser.avatar,
+          senderRole: currentUser.role,
+          text: `ha enviado un regalo: ${confirmingGift.name} (${confirmingGift.costCoins} 🪙)`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isGift: true,
+          giftIcon: confirmingGift.icon,
+        }
+      ]);
+
+      setTimeout(() => {
+        setActiveGiftAnim(null);
+      }, prefersReducedMotion ? 1500 : 3500);
+    } catch (err: any) {
+      alert(err.message || 'Error al enviar el regalo celestial.');
+    } finally {
+      setIsSendingGift(false);
+    }
   };
 
   const isTarotistaOwner = currentUser.role === 'tarotista' && profile?.userId === currentUser.id;
@@ -333,17 +483,20 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
         <div className="absolute inset-0 z-50 bg-[#0B0911]/80 backdrop-blur-xl flex flex-col justify-end animate-in slide-in-from-bottom duration-300">
           <div className="bg-[#1A1026] border-t border-[#D4AF37]/30 rounded-t-3xl p-5 flex flex-col gap-4">
             <div className="flex justify-between items-center border-b border-[#D4AF37]/20 pb-3">
-              <span className="font-playfair text-sm text-[#D4AF37] font-bold">Enviar Regalo Celestial</span>
+              <div>
+                <span className="font-playfair text-sm text-[#D4AF37] font-bold block">Enviar Regalo Celestial</span>
+                <span className="text-[10px] text-[#A7A7A7]">Tu saldo disponible: {currentUser.coinsBalance} 🪙</span>
+              </div>
               <button onClick={() => setShowGiftDrawer(false)} className="text-[#A7A7A7] hover:text-[#F7E7C1]">
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              {gifts.map((g) => (
+            <div className="grid grid-cols-2 gap-3 max-h-[280px] overflow-y-auto no-scrollbar">
+              {(giftCatalog.length > 0 ? giftCatalog : gifts).map((g) => (
                 <button
                   key={g.id}
-                  onClick={() => handleSelectGift(g)}
+                  onClick={() => handleInitiateGift(g)}
                   className="bg-[#2E1B47]/50 border border-[#D4AF37]/20 hover:border-[#D4AF37] p-3 rounded-2xl flex flex-col items-center text-center transition-all hover:scale-105 active:scale-95 group"
                 >
                   <span className="material-symbols-outlined text-3xl text-[#D4AF37] mb-1 group-hover:scale-110 transition-transform">
@@ -357,6 +510,68 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación Explícita de Envío de Regalo */}
+      {confirmingGift && (
+        <div className="absolute inset-0 z-50 bg-[#0B0911]/90 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 max-w-sm w-full text-center gold-glow space-y-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#5A2D82] to-[#D4AF37] p-0.5 mx-auto gold-glow">
+              <div className="w-full h-full bg-[#1A1026] rounded-full flex items-center justify-center">
+                <span className="material-symbols-outlined text-3xl text-[#D4AF37] filled">
+                  {confirmingGift.icon}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">
+                ¿Confirmar envío de {confirmingGift.name}?
+              </h3>
+              <p className="text-xs text-[#A7A7A7] mt-1">
+                Destinatario: <strong className="text-[#D4AF37]">{stream.tarotistaName}</strong>
+              </p>
+            </div>
+
+            <div className="bg-[#0B0911]/60 rounded-xl p-3 border border-[#D4AF37]/30 text-xs space-y-1.5 text-left">
+              <div className="flex justify-between text-[#F7E7C1]">
+                <span>Coste del regalo:</span>
+                <span className="font-bold text-[#D4AF37]">{confirmingGift.costCoins} Monedas</span>
+              </div>
+              <div className="flex justify-between text-[#A7A7A7]">
+                <span>Tu saldo actual:</span>
+                <span>{currentUser.coinsBalance} Monedas</span>
+              </div>
+              <div className="flex justify-between text-[#A7A7A7] pt-1 border-t border-white/10">
+                <span>Saldo resultante:</span>
+                <span className="text-[#F7E7C1]">{currentUser.coinsBalance - confirmingGift.costCoins} Monedas</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-[#A7A7A7] italic">
+              Esta operación descuenta las monedas inmediatamente y es definitiva. El profesional recibirá sus ganancias correspondientes.
+            </p>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmingGift(null)}
+                disabled={isSendingGift}
+                className="flex-1 py-2.5 rounded-xl border border-[#D4AF37]/40 text-xs font-bold text-[#A7A7A7] hover:text-[#F7E7C1]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSendGift}
+                disabled={isSendingGift}
+                className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider gold-glow hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isSendingGift ? 'Enviando...' : `Confirmar (${confirmingGift.costCoins} 🪙)`}
+              </button>
             </div>
           </div>
         </div>

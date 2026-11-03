@@ -29,6 +29,8 @@ import { AuthModal } from './components/AuthModal';
 import { AuthView } from './components/AuthView';
 import { SpendingLimitsModal } from './components/SpendingLimitsModal';
 import { BookConsultationModal } from './components/BookConsultationModal';
+import { CreatePostModal } from './components/CreatePostModal';
+import { MessagesView } from './components/MessagesView';
 
 export const App: React.FC = () => {
   // App state
@@ -54,9 +56,19 @@ export const App: React.FC = () => {
   const [isGuestExploring, setIsGuestExploring] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showSpendingLimits, setShowSpendingLimits] = useState<boolean>(false);
+  const [showCreatePostModal, setShowCreatePostModal] = useState<boolean>(false);
   const [bookingTarotista, setBookingTarotista] = useState<TarotistaProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showSearchModal, setShowSearchModal] = useState<boolean>(false);
+  const [initialChatUserId, setInitialChatUserId] = useState<string | null>(null);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+  const [initialPostId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('post');
+    }
+    return null;
+  });
 
   // Load state from backend server
   const fetchState = async () => {
@@ -356,6 +368,44 @@ export const App: React.FC = () => {
 
   const selectedTarotista = tarotistaProfiles.find(p => p.id === selectedTarotistaId);
   const activeStream = liveStreams[0] || null;
+
+  // Contador de mensajes sin leer (Polling cada 10s cuando está autenticado)
+  const fetchUnreadCount = async () => {
+    if (!currentUser) {
+      setUnreadMessagesCount(0);
+      return;
+    }
+    try {
+      const res = await fetch('/api/unread-count');
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadMessagesCount(data.unreadCount || 0);
+      }
+    } catch {
+      // Silencioso
+    }
+  };
+
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(() => {
+      if (!document.hidden && currentUser) {
+        fetchUnreadCount();
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Conectar inicio de conversación desde perfiles
+  const handleStartConversation = (targetUserId: string) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+    setInitialChatUserId(targetUserId);
+    setSelectedTarotistaId(null);
+    setActiveTab('messages');
+  };
   const activeConsultation = consultations.find(c => c.id === activeConsultationId);
 
   return (
@@ -382,17 +432,34 @@ export const App: React.FC = () => {
           setActiveTab('profile');
           setSelectedTarotistaId(null);
         }}
-        onOpenSearch={() => setShowSearchModal(true)}
+        onOpenSearch={() => {
+          setSelectedTarotistaId(null);
+          setActiveTab('explore');
+        }}
         onOpenAdmin={() => {
           if (currentUser?.role === 'admin') {
             setActiveTab('profile');
             setSelectedTarotistaId(null);
           }
         }}
+        onOpenCreatePost={() => setShowCreatePostModal(true)}
+        onOpenAstraAi={() => {
+          setSelectedTarotistaId(null);
+          setActiveTab('astra_ai');
+        }}
+        onOpenMessages={() => {
+          if (!currentUser) {
+            setShowAuthModal(true);
+            return;
+          }
+          setSelectedTarotistaId(null);
+          setActiveTab('messages');
+        }}
+        unreadMessagesCount={unreadMessagesCount}
       />
 
       {/* Main Body Layout Container */}
-      <div className="pt-24 pb-20 px-2 sm:px-4 max-w-5xl mx-auto min-h-screen">
+      <div className="pt-16 pb-16 px-2 sm:px-4 max-w-5xl mx-auto min-h-screen">
         {/* VIEW 1: Active 1:1 Consultation Room */}
         {activeConsultation ? (
           <ConsultationRoomView
@@ -405,7 +472,12 @@ export const App: React.FC = () => {
           /* VIEW 2: Tarotista Public Profile Detail */
           <TarotistaProfileView
             profile={selectedTarotista}
+            videos={videos}
+            reviews={reviews}
+            currentUser={currentUser}
             onBack={() => setSelectedTarotistaId(null)}
+            onOpenAuthModal={() => setShowAuthModal(true)}
+            onStartConversation={handleStartConversation}
             onBookConsultation={(id) => {
               if (!currentUser) {
                 setShowAuthModal(true);
@@ -429,30 +501,32 @@ export const App: React.FC = () => {
               {activeTab === 'feed' && (
                 <FeedView
                   videos={videos}
-                currentUser={currentUser}
-                tarotistaProfiles={tarotistaProfiles}
-                activeCategory={activeCategory}
-                onLikeVideo={handleLikeVideo}
-                onUnlockVideo={handleUnlockVideo}
-                onBookConsultation={(tarotistaId) => {
-                  if (!currentUser) {
-                    setShowAuthModal(true);
-                    return;
-                  }
-                  const tar = tarotistaProfiles.find(t => t.id === tarotistaId);
-                  if (tar) setBookingTarotista(tar);
-                }}
-                onViewTarotistaProfile={(tarotistaId) => setSelectedTarotistaId(tarotistaId)}
-                onOpenWallet={() => {
-                  if (!currentUser) {
-                    setShowAuthModal(true);
-                    return;
-                  }
-                  setActiveTab('profile');
-                }}
-                onOpenAuthModal={() => setShowAuthModal(true)}
-              />
-            )}
+                  currentUser={currentUser}
+                  tarotistaProfiles={tarotistaProfiles}
+                  activeCategory={activeCategory}
+                  initialPostId={initialPostId}
+                  onLikeVideo={handleLikeVideo}
+                  onUnlockVideo={handleUnlockVideo}
+                  onBookConsultation={(tarotistaId) => {
+                    if (!currentUser) {
+                      setShowAuthModal(true);
+                      return;
+                    }
+                    const tar = tarotistaProfiles.find(t => t.id === tarotistaId);
+                    if (tar) setBookingTarotista(tar);
+                  }}
+                  onViewTarotistaProfile={(tarotistaId) => setSelectedTarotistaId(tarotistaId)}
+                  onOpenWallet={() => {
+                    if (!currentUser) {
+                      setShowAuthModal(true);
+                      return;
+                    }
+                    setActiveTab('profile');
+                  }}
+                  onOpenAuthModal={() => setShowAuthModal(true)}
+                  onOpenCreatePost={() => setShowCreatePostModal(true)}
+                />
+              )}
 
             {activeTab === 'explore' && (
               <div className="space-y-6 max-w-2xl mx-auto pb-12">
@@ -558,6 +632,36 @@ export const App: React.FC = () => {
               />
             )}
 
+            {activeTab === 'messages' && (
+              currentUser ? (
+                <MessagesView
+                  currentUser={currentUser}
+                  initialTargetUserId={initialChatUserId}
+                  onClearInitialTargetUser={() => setInitialChatUserId(null)}
+                  onOpenProfile={(uid) => {
+                    const tar = tarotistaProfiles.find(t => t.userId === uid || t.id === uid);
+                    if (tar) {
+                      setSelectedTarotistaId(tar.id);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="glass-card max-w-md mx-auto p-8 rounded-3xl border border-[#D4AF37]/30 text-center space-y-4 my-12">
+                  <span className="material-symbols-outlined text-5xl text-[#D4AF37] gold-glow">forum</span>
+                  <h3 className="font-cinzel text-xl font-bold text-[#F7E7C1]">Mensajería Privada</h3>
+                  <p className="text-xs text-[#A09BAE] leading-relaxed">
+                    Inicia sesión o crea tu cuenta para conectar de forma privada y segura con tarotistas y usuarios de KABALY.
+                  </p>
+                  <button
+                    onClick={() => setShowAuthModal(true)}
+                    className="w-full bg-[#D4AF37] text-[#0B0911] font-bold py-3 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-105 transition-all"
+                  >
+                    Acceder o Registrarse
+                  </button>
+                </div>
+              )
+            )}
+
             {activeTab === 'profile' && (
               currentUser ? (
                 currentUser.role === 'admin' ? (
@@ -582,7 +686,9 @@ export const App: React.FC = () => {
                     onOpenWallet={() => {}}
                     onOpenLimitsModal={() => setShowSpendingLimits(true)}
                     onUpdateProfile={handleUpdateProfile}
+                    onRefreshUser={fetchState}
                     onCreatePost={async () => {}}
+                    onSelectConsultation={(id) => setActiveConsultationId(id)}
                     onSelectVideo={(id) => {
                       const v = videos.find(x => x.id === id);
                       if (v) {
@@ -617,7 +723,7 @@ export const App: React.FC = () => {
       <BottomNav
         activeTab={activeTab}
         onSelectTab={(tab) => {
-          if (tab === 'profile' && !currentUser) {
+          if ((tab === 'profile' || tab === 'messages') && !currentUser) {
             setIsGuestExploring(false);
             setShowAuthModal(true);
             return;
@@ -627,6 +733,15 @@ export const App: React.FC = () => {
           setActiveTab(tab);
         }}
         hasActiveLiveStream={!!activeStream}
+        unreadMessagesCount={unreadMessagesCount}
+        onOpenCreatePost={() => {
+          if (!currentUser) {
+            setShowAuthModal(true);
+            return;
+          }
+          setShowCreatePostModal(true);
+        }}
+        currentUserAvatar={currentUser?.avatar}
       />
 
       {/* Modal: Autenticación Real (Login / Registro) */}
@@ -641,8 +756,9 @@ export const App: React.FC = () => {
         <SpendingLimitsModal
           currentUser={currentUser}
           onClose={() => setShowSpendingLimits(false)}
-          onUpdateLimits={async (daily, weekly) => {
+          onSaveLimits={async () => {
             setShowSpendingLimits(false);
+            await fetchState();
           }}
         />
       )}
@@ -675,6 +791,16 @@ export const App: React.FC = () => {
           }}
         />
       )}
+
+      {/* Modal: Crear Publicación / Reel desde dispositivo */}
+      <CreatePostModal
+        isOpen={showCreatePostModal}
+        onClose={() => setShowCreatePostModal(false)}
+        onPostCreated={() => {
+          setShowCreatePostModal(false);
+          fetchState();
+        }}
+      />
     </div>
   );
 };

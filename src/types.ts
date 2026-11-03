@@ -7,6 +7,10 @@ export interface User {
   role: UserRole;
   avatar: string;
   coinsBalance: number;
+  coinsReserved?: number;
+  purchasedCoinsBalance?: number;
+  earningsCoinsBalance?: number;
+  financialRestriction?: boolean;
   isAgeVerified: boolean;
   spendingLimitDaily?: number;
   spendingLimitWeekly?: number;
@@ -67,6 +71,7 @@ export type Category =
 export interface Video {
   id: string;
   tarotistaId: string;
+  authorId?: string;
   tarotistaName: string;
   tarotistaAvatar: string;
   isVerified: boolean;
@@ -80,11 +85,69 @@ export interface Video {
   soundTitle: string;
   isPremium: boolean;
   priceCoins?: number;
+  hasUnlocked?: boolean;
+  isExclusive?: boolean;
   unlockedByUserIds: string[];
   isLikedByCurrentUser?: boolean;
+  isSavedByCurrentUser?: boolean;
   mediaType?: 'video' | 'image';
   createdAt?: string;
   description?: string;
+  isWithdrawn?: boolean;
+  withdrawnAt?: string;
+  withdrawalReason?: string;
+}
+
+export interface Comment {
+  id: string;
+  videoId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  parentId?: string | null;
+  content: string;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  replies?: Comment[];
+}
+
+export interface Story {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  caption?: string;
+  createdAt: string;
+  expiresAt: string;
+  hasViewed?: boolean;
+  viewsCount?: number;
+}
+
+export interface StoryGroup {
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  hasUnseen: boolean;
+  stories: Story[];
+}
+
+export interface StoryViewer {
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  viewedAt: string;
+}
+
+export interface FollowUser {
+  id: string;
+  name: string;
+  avatar: string;
+  role: UserRole;
+  handle?: string;
+  isFollowing?: boolean;
 }
 
 export interface QueueUser {
@@ -117,10 +180,11 @@ export type ConsultationType = 'chat' | 'audio' | 'video';
 export type ConsultationStatus = 
   | 'solicitada'
   | 'aceptada'
-  | 'rechazada'
   | 'en_curso'
   | 'completada'
+  | 'rechazada'
   | 'cancelada'
+  | 'expirada'
   | 'no_show'
   | 'disputada'
   | 'reembolsada';
@@ -131,20 +195,73 @@ export interface Consultation {
   clientName: string;
   clientAvatar: string;
   tarotistaId: string;
+  tarotistaUserId?: string;
   tarotistaName: string;
   tarotistaAvatar: string;
   type: ConsultationType;
+  modality?: ConsultationType;
   durationMinutes: number;
   status: ConsultationStatus;
+  ratePerMinuteCoins?: number;
   totalCoins: number;
-  platformCommissionCoins: number;
-  tarotistaEarningsCoins: number;
+  priceCoins?: number;
+  platformCommissionCoins?: number;
+  tarotistaEarningsCoins?: number;
+  commissionPercentage?: number;
   createdAt: string;
+  requestedAt?: string;
   acceptedAt?: string;
+  startedAt?: string;
+  scheduledEndAt?: string;
   endedAt?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
+  isSettled?: boolean;
+  isRefunded?: boolean;
+  roomToken?: string;
+  idempotencyKey?: string;
   notes?: string;
-  autoCancelTimeoutMs?: number;
+  expiresAt?: string;
   disputeReason?: string;
+}
+
+export interface ConsultationMessage {
+  id: string;
+  consultationId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  content: string;
+  cardData?: any;
+  createdAt: string;
+}
+
+export interface ConsultationDispute {
+  id: string;
+  consultationId: string;
+  clientId: string;
+  tarotistaId: string;
+  raisedById: string;
+  reason: string;
+  status: 'pending' | 'resolved_refund_full' | 'resolved_refund_partial' | 'resolved_rejected';
+  refundAmountCoins: number;
+  adminNotes?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+}
+
+export interface ConsultationRoomCredentials {
+  consultationId: string;
+  roomToken: string;
+  channelName: string;
+  userId: string;
+  userName: string;
+  role: 'client' | 'tarotista';
+  type: ConsultationType;
+  expiresAt: string;
+  iceServers?: any[];
 }
 
 export interface Gift {
@@ -158,12 +275,35 @@ export interface Gift {
 export interface GiftEvent {
   id: string;
   streamId: string;
+  transactionId?: string;
+  senderId?: string;
   senderName: string;
   senderAvatar: string;
+  giftId?: string;
   giftName: string;
   giftIcon: string;
   giftCost: number;
   timestamp: string;
+}
+
+export interface PostUnlock {
+  id: string;
+  userId: string;
+  postId: string;
+  authorId: string;
+  coinsPaid: number;
+  priceCoins: number;
+  platformFeeCoins: number;
+  tarotistaEarningsCoins: number;
+  unlockedAt: string;
+  isRefunded?: boolean;
+  refundedAt?: string;
+  refundReason?: string;
+  postTitle?: string;
+  postThumbnail?: string;
+  authorName?: string;
+  mediaType?: 'video' | 'image';
+  videoUrl?: string;
 }
 
 export interface ChatMessage {
@@ -186,13 +326,23 @@ export interface LedgerTransaction {
     | 'topup' 
     | 'consultation_escrow' 
     | 'consultation_payout' 
+    | 'consultation_reserve'
+    | 'consultation_refund'
+    | 'consultation_settlement'
     | 'gift_sent' 
     | 'gift_received' 
+    | 'post_unlock_buy'
+    | 'post_unlock_earn'
+    | 'post_unlock_refund'
+    | 'platform_fee'
     | 'refund' 
     | 'withdrawal' 
+    | 'compensatory_adjustment'
     | 'unlock_premium_video';
   amountCoins: number;
+  amountCents?: number;
   amountEur: number;
+  balanceAfter?: number;
   description: string;
   referenceId?: string;
   timestamp: string;
@@ -264,7 +414,125 @@ export interface CoinPackage {
   name: string;
   coins: number;
   priceEur: number;
+  priceCents?: number;
+  currency?: string;
   badge?: string;
   icon: string;
   popular?: boolean;
+  isActive?: boolean;
 }
+
+// ============================================================================
+// FASE 5: MENSAJERÍA PRIVADA Y GESTIÓN DE CONTACTOS
+// ============================================================================
+
+export interface ConversationParticipant {
+  id: string;
+  name: string;
+  avatar: string;
+  handle?: string;
+  role: 'cliente' | 'tarotista' | 'admin';
+  isVerified?: boolean;
+}
+
+export interface PrivateChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  recipientId: string;
+  content: string;
+  clientMessageId?: string;
+  attachmentId?: string;
+  attachmentUrl?: string;
+  attachmentType?: 'image';
+  status: 'sending' | 'sent' | 'read' | 'error';
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  otherUser: ConversationParticipant;
+  lastMessage?: {
+    id: string;
+    senderId: string;
+    content: string;
+    createdAt: string;
+    status: 'sending' | 'sent' | 'read' | 'error';
+    hasAttachment?: boolean;
+  };
+  unreadCount: number;
+  isBlockedByMe: boolean;
+  hasBlockedMe: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BlockedUser {
+  id: string;
+  userId: string;
+  name: string;
+  avatar: string;
+  handle?: string;
+  role: string;
+  blockedAt: string;
+}
+
+export interface MessageReport {
+  id: string;
+  reporterId: string;
+  messageId: string;
+  conversationId: string;
+  reportedUserId: string;
+  messageContent: string;
+  reason: string;
+  details?: string;
+  status: 'pending' | 'reviewed' | 'dismissed';
+  createdAt: string;
+}
+
+// ============================================================================
+// FASE 6: MONEDERO PERSISTENTE Y COMPRA DE MONEDAS VÍA STRIPE CHECKOUT
+// ============================================================================
+
+export type CoinOrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'expired';
+
+export interface CoinOrder {
+  id: string;
+  orderNumber: string;
+  userId: string;
+  packageId: string;
+  packageName: string;
+  coins: number;
+  amountCents: number;
+  currency: string;
+  status: CoinOrderStatus;
+  stripeSessionId?: string;
+  stripePaymentIntentId?: string;
+  idempotencyKey?: string;
+  createdAt: string;
+  expiresAt: string;
+  paidAt?: string;
+  failedAt?: string;
+  failureReason?: string;
+}
+
+export interface ReconciliationDiscrepancy {
+  type: 'UNCREDITED_PAID_ORDER' | 'BALANCE_LEDGER_MISMATCH' | 'DUPLICATE_ORDER_CREDIT' | 'NEGATIVE_BALANCE';
+  userId?: string;
+  orderId?: string;
+  details: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface ReconciliationReport {
+  timestamp: string;
+  totalOrdersPaid: number;
+  totalOrdersAmountCents: number;
+  totalCoinsCredited: number;
+  totalUsersAudited: number;
+  discrepancies: ReconciliationDiscrepancy[];
+  isBalanced: boolean;
+}
+
+

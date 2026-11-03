@@ -12,6 +12,8 @@ export interface UserSessionData {
   handle?: string;
   bio?: string;
   coinsBalance: number;
+  purchasedCoinsBalance?: number;
+  earningsCoinsBalance?: number;
   isAgeVerified: boolean;
   spendingLimitDaily?: number | null;
   spendingLimitWeekly?: number | null;
@@ -84,7 +86,7 @@ export async function registerUser(params: {
     passwordHash,
     safeRole,
     defaultAvatar,
-    100, // Saldo de bienvenida de 100 monedas
+    0, // Saldo inicial real en 0 (sin monedas ficticias)
     1,
     now,
     now
@@ -134,7 +136,9 @@ export async function registerUser(params: {
     email,
     role: safeRole,
     avatar: defaultAvatar,
-    coinsBalance: 100,
+    coinsBalance: 0,
+    purchasedCoinsBalance: 0,
+    earningsCoinsBalance: 0,
     isAgeVerified: true,
     spentToday: 0,
     spentThisWeek: 0,
@@ -227,6 +231,8 @@ export async function loginUser(params: {
     handle: row.handle,
     bio: row.bio,
     coinsBalance: row.coins_balance,
+    purchasedCoinsBalance: row.purchased_coins_balance || 0,
+    earningsCoinsBalance: row.earnings_coins_balance || 0,
     isAgeVerified: !!row.is_age_verified,
     spendingLimitDaily: row.spending_limit_daily,
     spendingLimitWeekly: row.spending_limit_weekly,
@@ -298,6 +304,8 @@ export async function getSessionUser(sessionToken: string | undefined): Promise<
     handle: row.handle,
     bio: row.bio,
     coinsBalance: row.coins_balance,
+    purchasedCoinsBalance: row.purchased_coins_balance || 0,
+    earningsCoinsBalance: row.earnings_coins_balance || 0,
     isAgeVerified: !!row.is_age_verified,
     spendingLimitDaily: row.spending_limit_daily,
     spendingLimitWeekly: row.spending_limit_weekly,

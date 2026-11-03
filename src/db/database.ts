@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import mysql from 'mysql2/promise';
 
 // @ts-ignore
-const req = typeof require !== 'undefined' ? require : createRequire(import.meta.url);
+const req = typeof require !== 'undefined' ? require : createRequire(path.resolve(process.cwd(), 'package.json'));
 
 let sqliteConstructor: any = null;
 function getSqliteConstructor() {
@@ -464,4 +464,611 @@ export async function runMigrations(db: IDatabase): Promise<void> {
     `, ['001_phase1_auth_schema', new Date().toISOString()]);
     console.log('[Database] Migración 001_phase1_auth_schema completada.');
   }
+
+  // Migración 002: Esquema FASE 3 (Publicaciones Reales, Formatos Media, Borrado Lógico, Idempotencia)
+  if (!appliedSet.has('002_phase3_posts_feed')) {
+    console.log('[Database] Aplicando migración: 002_phase3_posts_feed...');
+
+    const safeAddColumn = async (table: string, colDef: string) => {
+      try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+      } catch (e: any) {
+        // Columna ya existe
+      }
+    };
+
+    await safeAddColumn('videos', 'media_type VARCHAR(16) NOT NULL DEFAULT "video"');
+    await safeAddColumn('videos', 'description TEXT DEFAULT NULL');
+    await safeAddColumn('videos', 'is_deleted INT NOT NULL DEFAULT 0');
+    await safeAddColumn('videos', 'deleted_at DATETIME DEFAULT NULL');
+    await safeAddColumn('videos', 'idempotency_key VARCHAR(128) DEFAULT NULL');
+
+    // Eliminar publicaciones de demostración en funcionamiento normal
+    const isTest = process.env.NODE_ENV === 'test' || process.env.TEST_RUN === 'true';
+    if (!isTest) {
+      await db.run(`DELETE FROM videos WHERE id = 'vid_1'`);
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['002_phase3_posts_feed', new Date().toISOString()]);
+    console.log('[Database] Migración 002_phase3_posts_feed completada.');
+  }
+
+  // Migración 003: Esquema FASE 4 (Likes persistentes, Comentarios con respuestas, Follows, Guardados, Stories de 24h)
+  if (!appliedSet.has('003_phase4_social_stories')) {
+    console.log('[Database] Aplicando migración: 003_phase4_social_stories...');
+
+    // 1. Likes persistentes con restricción única por usuario y publicación
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS post_likes (
+        id VARCHAR(64) PRIMARY KEY,
+        video_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(video_id, user_id)
+      );
+    `);
+
+    // 2. Comentarios reales con soporte de 1 nivel de respuestas (parent_id)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS comments (
+        id VARCHAR(64) PRIMARY KEY,
+        video_id VARCHAR(64) NOT NULL,
+        author_id VARCHAR(64) NOT NULL,
+        author_name VARCHAR(255) NOT NULL,
+        author_avatar TEXT,
+        parent_id VARCHAR(64) DEFAULT NULL,
+        content TEXT NOT NULL,
+        is_deleted INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL
+      );
+    `);
+
+    // 3. Relaciones de seguimiento persistentes (Follows)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS follows (
+        id VARCHAR(64) PRIMARY KEY,
+        follower_id VARCHAR(64) NOT NULL,
+        following_id VARCHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(follower_id, following_id)
+      );
+    `);
+
+    // 4. Publicaciones guardadas privadas (Saved Posts)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS saved_posts (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        video_id VARCHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(user_id, video_id)
+      );
+    `);
+
+    // 5. Stories efímeras de 24 horas
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS stories (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        user_name VARCHAR(255) NOT NULL,
+        user_avatar TEXT,
+        media_url TEXT NOT NULL,
+        media_type VARCHAR(16) NOT NULL DEFAULT 'image',
+        caption TEXT DEFAULT NULL,
+        created_at DATETIME NOT NULL,
+        expires_at DATETIME NOT NULL,
+        is_deleted INT NOT NULL DEFAULT 0,
+        deleted_at DATETIME DEFAULT NULL
+      );
+    `);
+
+    // 6. Visualizaciones únicas de stories
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS story_views (
+        id VARCHAR(64) PRIMARY KEY,
+        story_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        user_name VARCHAR(255) NOT NULL,
+        user_avatar TEXT,
+        viewed_at DATETIME NOT NULL,
+        UNIQUE(story_id, user_id)
+      );
+    `);
+
+    // Índices de optimización
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_post_likes_video ON post_likes(video_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_post_likes_user ON post_likes(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(video_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_saved_posts_user ON saved_posts(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_stories_user ON stories(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_stories_expires ON stories(expires_at)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_story_views_story ON story_views(story_id)');
+    } catch (e: any) {
+      // Ignorar si el motor ya los indexa
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['003_phase4_social_stories', new Date().toISOString()]);
+    console.log('[Database] Migración 003_phase4_social_stories completada.');
+  }
+
+  // Migración 004: Esquema FASE 5 (Mensajería Privada, Adjuntos Seguros, Bloqueos y Reportes)
+  if (!appliedSet.has('004_phase5_private_messaging')) {
+    console.log('[Database] Aplicando migración: 004_phase5_private_messaging...');
+
+    // 1. Conversaciones 1 a 1 (Única por pareja de usuarios con orden canónico)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id VARCHAR(64) PRIMARY KEY,
+        user_a_id VARCHAR(64) NOT NULL,
+        user_b_id VARCHAR(64) NOT NULL,
+        last_message_id VARCHAR(64) DEFAULT NULL,
+        last_message_text TEXT DEFAULT NULL,
+        last_message_at DATETIME NOT NULL,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        UNIQUE(user_a_id, user_b_id)
+      );
+    `);
+
+    // 2. Mensajes privados persistentes
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id VARCHAR(64) PRIMARY KEY,
+        conversation_id VARCHAR(64) NOT NULL,
+        sender_id VARCHAR(64) NOT NULL,
+        recipient_id VARCHAR(64) NOT NULL,
+        content TEXT NOT NULL,
+        client_message_id VARCHAR(64) DEFAULT NULL,
+        attachment_id VARCHAR(64) DEFAULT NULL,
+        attachment_url TEXT DEFAULT NULL,
+        attachment_type VARCHAR(16) DEFAULT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'sent',
+        read_at DATETIME DEFAULT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(conversation_id, client_message_id)
+      );
+    `);
+
+    // 3. Adjuntos privados de chat
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS chat_attachments (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        conversation_id VARCHAR(64) DEFAULT NULL,
+        message_id VARCHAR(64) DEFAULT NULL,
+        filename VARCHAR(255) NOT NULL,
+        original_name VARCHAR(255) NOT NULL,
+        mime_type VARCHAR(64) NOT NULL,
+        size INT NOT NULL,
+        is_claimed INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 4. Bloqueos bidireccionales entre usuarios
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS user_blocks (
+        id VARCHAR(64) PRIMARY KEY,
+        blocker_id VARCHAR(64) NOT NULL,
+        blocked_id VARCHAR(64) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE(blocker_id, blocked_id)
+      );
+    `);
+
+    // 5. Reportes privados de mensajes
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS message_reports (
+        id VARCHAR(64) PRIMARY KEY,
+        reporter_id VARCHAR(64) NOT NULL,
+        message_id VARCHAR(64) NOT NULL,
+        conversation_id VARCHAR(64) NOT NULL,
+        reported_user_id VARCHAR(64) NOT NULL,
+        message_content TEXT NOT NULL,
+        reason VARCHAR(64) NOT NULL,
+        details TEXT DEFAULT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // Índices de optimización para mensajería
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_conversations_user_a ON conversations(user_a_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_conversations_user_b ON conversations(user_b_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_conversations_last_msg_at ON conversations(last_message_at)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_messages_recipient_status ON messages(recipient_id, status)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_chat_attach_user ON chat_attachments(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_chat_attach_conv ON chat_attachments(conversation_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_user_blocks_blocker ON user_blocks(blocker_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked ON user_blocks(blocked_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_message_reports_rep ON message_reports(reporter_id)');
+    } catch (e: any) {
+      // Ignorar si el motor ya los indexa
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['004_phase5_private_messaging', new Date().toISOString()]);
+    console.log('[Database] Migración 004_phase5_private_messaging completada.');
+  }
+
+  // Migración 005: Esquema FASE 6 (Monedero Persistente, Paquetes de Monedas, Pedidos y Eventos Stripe)
+  if (!appliedSet.has('005_phase6_stripe_wallet')) {
+    console.log('[Database] Aplicando migración: 005_phase6_stripe_wallet...');
+
+    const safeAddColumn = async (table: string, colDef: string) => {
+      try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+      } catch (e: any) {
+        // Columna ya existe
+      }
+    };
+
+    // 1. Columnas contables exactas en ledger y separación de saldos en users
+    await safeAddColumn('ledger', 'amount_cents INT NOT NULL DEFAULT 0');
+    await safeAddColumn('ledger', 'balance_after INT NOT NULL DEFAULT 0');
+    await safeAddColumn('users', 'spending_limit_daily_cents INT DEFAULT NULL');
+    await safeAddColumn('users', 'spending_limit_weekly_cents INT DEFAULT NULL');
+    await safeAddColumn('users', 'financial_restriction INT NOT NULL DEFAULT 0');
+    await safeAddColumn('users', 'purchased_coins_balance INT NOT NULL DEFAULT 0');
+    await safeAddColumn('users', 'earnings_coins_balance INT NOT NULL DEFAULT 0');
+
+    // 2. Tabla canónica de paquetes de monedas del servidor
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS coin_packages (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        coins INT NOT NULL,
+        price_cents INT NOT NULL,
+        currency VARCHAR(8) NOT NULL DEFAULT 'eur',
+        badge VARCHAR(64),
+        icon VARCHAR(64) NOT NULL,
+        is_active INT NOT NULL DEFAULT 1,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // Sembrar paquetes canónicos oficiales
+    const now = new Date().toISOString();
+    const packagesToSeed = [
+      { id: 'pack_iniciacion', name: 'Pack Iniciación', coins: 100, priceCents: 999, badge: 'Iniciación', icon: 'toll', sort: 1 },
+      { id: 'pack_astral', name: 'Pack Astral', coins: 300, priceCents: 2499, badge: 'Popular', icon: 'auto_awesome', sort: 2 },
+      { id: 'pack_mistico', name: 'Pack Místico', coins: 600, priceCents: 4499, badge: 'Ahorro 25%', icon: 'diamond', sort: 3 },
+      { id: 'pack_cosmico', name: 'Pack Cósmico', coins: 1500, priceCents: 9999, badge: 'VIP', icon: 'crown', sort: 4 },
+    ];
+
+    for (const p of packagesToSeed) {
+      await db.run(`
+        INSERT OR IGNORE INTO coin_packages (id, name, coins, price_cents, currency, badge, icon, is_active, sort_order, created_at)
+        VALUES (?, ?, ?, ?, 'eur', ?, ?, 1, ?, ?)
+      `, [p.id, p.name, p.coins, p.priceCents, p.badge, p.icon, p.sort, now]);
+    }
+
+    // 3. Tabla de pedidos de compra de monedas (Stripe Checkout)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS coin_orders (
+        id VARCHAR(64) PRIMARY KEY,
+        order_number VARCHAR(64) NOT NULL UNIQUE,
+        user_id VARCHAR(64) NOT NULL,
+        package_id VARCHAR(64) NOT NULL,
+        package_name VARCHAR(255) NOT NULL,
+        coins INT NOT NULL,
+        amount_cents INT NOT NULL,
+        currency VARCHAR(8) NOT NULL DEFAULT 'eur',
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        stripe_session_id VARCHAR(255) UNIQUE,
+        stripe_payment_intent_id VARCHAR(255),
+        idempotency_key VARCHAR(128) UNIQUE,
+        created_at DATETIME NOT NULL,
+        expires_at DATETIME NOT NULL,
+        paid_at DATETIME,
+        failed_at DATETIME,
+        failure_reason TEXT,
+        metadata TEXT
+      );
+    `);
+
+    // 4. Tabla de eventos procesados de Stripe para garantizar idempotencia total en webhooks
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS processed_stripe_events (
+        id VARCHAR(128) PRIMARY KEY,
+        event_type VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        processed_at DATETIME NOT NULL,
+        error_message TEXT,
+        payload TEXT
+      );
+    `);
+
+    // 5. Tabla de registro de reembolsos y disputas
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS refund_disputes (
+        id VARCHAR(64) PRIMARY KEY,
+        order_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) NOT NULL,
+        stripe_refund_id VARCHAR(128) UNIQUE,
+        stripe_dispute_id VARCHAR(128),
+        amount_cents INT NOT NULL,
+        coins_to_deduct INT NOT NULL,
+        coins_deducted INT NOT NULL,
+        unrecovered_coins INT NOT NULL DEFAULT 0,
+        status VARCHAR(32) NOT NULL DEFAULT 'processed',
+        notes TEXT,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // Índices de optimización para transacciones financieras y auditoría
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_coin_orders_user ON coin_orders(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_coin_orders_status ON coin_orders(status)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_coin_orders_session ON coin_orders(stripe_session_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_coin_orders_expires ON coin_orders(expires_at)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_ledger_user ON ledger(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_ledger_type ON ledger(type)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_ledger_ref ON ledger(reference_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_refund_disputes_order ON refund_disputes(order_id)');
+    } catch (e: any) {
+      // Ignorar si ya existen
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['005_phase6_stripe_wallet', new Date().toISOString()]);
+    console.log('[Database] Migración 005_phase6_stripe_wallet completada.');
+  }
+
+  // Migración 006: Esquema FASE 8 (Consultas Privadas 1:1, Reserva/Liquidación, Sala y Disputas)
+  if (!appliedSet.has('006_phase8_consultations')) {
+    console.log('[Database] Aplicando migración: 006_phase8_consultations...');
+
+    const safeAddColumn = async (table: string, colDef: string) => {
+      try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+      } catch (e: any) {
+        // Columna ya existe
+      }
+    };
+
+    // 1. Ampliación de columnas en consultations
+    await safeAddColumn('consultations', 'tarotista_user_id VARCHAR(64)');
+    await safeAddColumn('consultations', 'rate_per_minute_coins INT NOT NULL DEFAULT 0');
+    await safeAddColumn('consultations', 'platform_commission_coins INT NOT NULL DEFAULT 0');
+    await safeAddColumn('consultations', 'commission_percentage INT NOT NULL DEFAULT 20');
+    await safeAddColumn('consultations', 'started_at DATETIME');
+    await safeAddColumn('consultations', 'scheduled_end_at DATETIME');
+    await safeAddColumn('consultations', 'accepted_at DATETIME');
+    await safeAddColumn('consultations', 'ended_at DATETIME');
+    await safeAddColumn('consultations', 'cancelled_at DATETIME');
+    await safeAddColumn('consultations', 'cancelled_by VARCHAR(64)');
+    await safeAddColumn('consultations', 'cancellation_reason TEXT');
+    await safeAddColumn('consultations', 'is_settled INT NOT NULL DEFAULT 0');
+    await safeAddColumn('consultations', 'is_refunded INT NOT NULL DEFAULT 0');
+    await safeAddColumn('consultations', 'room_token VARCHAR(128)');
+    await safeAddColumn('consultations', 'idempotency_key VARCHAR(128)');
+    await safeAddColumn('consultations', 'notes TEXT');
+    await safeAddColumn('consultations', 'expires_at DATETIME');
+
+    // 2. Columna de saldo reservado en users
+    await safeAddColumn('users', 'coins_reserved INT NOT NULL DEFAULT 0');
+
+    // 3. Tabla de mensajes de sala privada
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS consultation_messages (
+        id VARCHAR(64) PRIMARY KEY,
+        consultation_id VARCHAR(64) NOT NULL,
+        sender_id VARCHAR(64) NOT NULL,
+        sender_name VARCHAR(255) NOT NULL,
+        sender_avatar TEXT,
+        content TEXT NOT NULL,
+        card_data TEXT,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 4. Tabla de disputas de consultas
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS consultation_disputes (
+        id VARCHAR(64) PRIMARY KEY,
+        consultation_id VARCHAR(64) NOT NULL,
+        client_id VARCHAR(64) NOT NULL,
+        tarotista_id VARCHAR(64) NOT NULL,
+        raised_by_id VARCHAR(64) NOT NULL,
+        reason TEXT NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        refund_amount_coins INT NOT NULL DEFAULT 0,
+        admin_notes TEXT,
+        resolved_by VARCHAR(64),
+        resolved_at DATETIME,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 5. Tabla de directos / livestreams para verificar aislamiento y bloqueo de emisión pública
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS live_streams (
+        id VARCHAR(64) PRIMARY KEY,
+        tarotista_id VARCHAR(64) NOT NULL,
+        tarotista_name VARCHAR(255) NOT NULL,
+        tarotista_avatar TEXT,
+        is_verified INT NOT NULL DEFAULT 1,
+        title VARCHAR(255) NOT NULL,
+        category VARCHAR(64) NOT NULL DEFAULT 'Tarot',
+        viewer_count INT NOT NULL DEFAULT 0,
+        is_live INT NOT NULL DEFAULT 1,
+        started_at DATETIME NOT NULL,
+        ended_at DATETIME
+      );
+    `);
+
+    // Índices para búsquedas de sala, participantes y estado
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultations_client ON consultations(client_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultations_tarotista ON consultations(tarotista_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultations_tarotista_user ON consultations(tarotista_user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultations_status ON consultations(status)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultations_idempotency ON consultations(idempotency_key)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultation_msgs_cons ON consultation_messages(consultation_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_consultation_disputes_cons ON consultation_disputes(consultation_id)');
+      await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_consultation_unique ON reviews(consultation_id)');
+    } catch (e: any) {
+      // Ignorar si ya existen
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['006_phase8_consultations', new Date().toISOString()]);
+    console.log('[Database] Migración 006_phase8_consultations completada.');
+  }
+
+  // Migración 007: Esquema FASE 9 (Catálogo de Regalos, Transacciones en Directos, Desbloqueo de Posts Exclusivos)
+  if (!appliedSet.has('007_phase9_gifts_and_unlocks')) {
+    console.log('[Database] Aplicando migración: 007_phase9_gifts_and_unlocks...');
+
+    const safeAddColumn = async (table: string, colDef: string) => {
+      try {
+        await db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`);
+      } catch (e: any) {
+        // Columna ya existe
+      }
+    };
+
+    // 1. Columnas adicionales en videos para exclusividad y retirada controlada
+    await safeAddColumn('videos', 'is_exclusive INT NOT NULL DEFAULT 0');
+    await safeAddColumn('videos', 'is_withdrawn INT NOT NULL DEFAULT 0');
+    await safeAddColumn('videos', 'withdrawn_at DATETIME DEFAULT NULL');
+    await safeAddColumn('videos', 'withdrawal_reason TEXT DEFAULT NULL');
+
+    // 2. Catálogo oficial de regalos definido en el servidor
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS stream_gifts (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        icon VARCHAR(64) NOT NULL,
+        cost_coins INT NOT NULL,
+        description TEXT,
+        is_active INT NOT NULL DEFAULT 1,
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // Sembrar regalos oficiales
+    const now = new Date().toISOString();
+    const giftsToSeed = [
+      { id: 'gift_vela', name: 'Vela Mística', icon: 'local_fire_department', costCoins: 10, description: 'Ilumina la lectura con energía sagrada', sortOrder: 1 },
+      { id: 'gift_cristal', name: 'Cuarzo Rosa', icon: 'diamond', costCoins: 50, description: 'Atrae amor puro y armonía', sortOrder: 2 },
+      { id: 'gift_bola', name: 'Bola de Cristal', icon: 'blur_on', costCoins: 150, description: 'Abre la visión del futuro celestial', sortOrder: 3 },
+      { id: 'gift_corona', name: 'Corona Astral', icon: 'auto_awesome', costCoins: 500, description: 'Máximo tributo de agradecimiento', sortOrder: 4 },
+    ];
+
+    for (const g of giftsToSeed) {
+      await db.run(`
+        INSERT OR IGNORE INTO stream_gifts (id, name, icon, cost_coins, description, is_active, sort_order, created_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+      `, [g.id, g.name, g.icon, g.costCoins, g.description, g.sortOrder, now]);
+    }
+
+    // 3. Tabla de transacciones de regalos durante emisiones en directo
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS stream_gift_transactions (
+        id VARCHAR(64) PRIMARY KEY,
+        stream_id VARCHAR(64) NOT NULL,
+        sender_id VARCHAR(64) NOT NULL,
+        tarotista_id VARCHAR(64) NOT NULL,
+        tarotista_user_id VARCHAR(64) NOT NULL,
+        gift_id VARCHAR(64) NOT NULL,
+        gift_name VARCHAR(255) NOT NULL,
+        gift_icon VARCHAR(64) NOT NULL,
+        coins_amount INT NOT NULL,
+        platform_fee_coins INT NOT NULL,
+        tarotista_earnings_coins INT NOT NULL,
+        commission_percentage INT NOT NULL DEFAULT 20,
+        idempotency_key VARCHAR(128),
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 4. Tabla de eventos recuperables de regalos en directos (para animaciones y logs)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS stream_gift_events (
+        id VARCHAR(64) PRIMARY KEY,
+        stream_id VARCHAR(64) NOT NULL,
+        transaction_id VARCHAR(64) NOT NULL UNIQUE,
+        sender_id VARCHAR(64) NOT NULL,
+        sender_name VARCHAR(255) NOT NULL,
+        sender_avatar TEXT,
+        gift_id VARCHAR(64) NOT NULL,
+        gift_name VARCHAR(255) NOT NULL,
+        gift_icon VARCHAR(64) NOT NULL,
+        coins INT NOT NULL,
+        created_at DATETIME NOT NULL
+      );
+    `);
+
+    // 5. Tabla de desbloqueos de publicaciones exclusivas (Compras de contenido)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS post_unlocks (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        post_id VARCHAR(64) NOT NULL,
+        author_id VARCHAR(64) NOT NULL,
+        coins_paid INT NOT NULL,
+        platform_fee_coins INT NOT NULL,
+        tarotista_earnings_coins INT NOT NULL,
+        commission_percentage INT NOT NULL DEFAULT 20,
+        idempotency_key VARCHAR(128),
+        unlocked_at DATETIME NOT NULL,
+        is_refunded INT NOT NULL DEFAULT 0,
+        refunded_at DATETIME,
+        refund_reason TEXT,
+        UNIQUE(user_id, post_id)
+      );
+    `);
+
+    // 6. Sembrar directos persistentes si la tabla live_streams está vacía
+    const existingStreams = await db.get<any>('SELECT COUNT(*) as count FROM live_streams');
+    if (!existingStreams || existingStreams.count === 0) {
+      await db.run(`
+        INSERT OR IGNORE INTO live_streams (id, tarotista_id, tarotista_name, tarotista_avatar, is_verified, title, category, viewer_count, is_live, started_at)
+        VALUES 
+          ('live_1', 'usr_tarotista_1', 'Luna Mística', 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', 1, 'Lectura Abierta de Tarot y Mensajes del Universo ✨ | En Vivo', 'Tarot', 1240, 1, ?),
+          ('live_2', 'usr_tarotista_2', 'Astro Maestro', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200', 1, 'Análisis Astrológico Semanal & Consultas Rápidas 🪐', 'Astrología', 890, 1, ?)
+      `, [now, now]);
+    }
+
+    // 7. Índices de rendimiento e integridad contable
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_stream_gifts_active ON stream_gifts(is_active)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_gift_tx_stream ON stream_gift_transactions(stream_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_gift_tx_sender ON stream_gift_transactions(sender_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_gift_tx_tarotista ON stream_gift_transactions(tarotista_user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_gift_events_stream ON stream_gift_events(stream_id, created_at)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_post_unlocks_user ON post_unlocks(user_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_post_unlocks_post ON post_unlocks(post_id)');
+      await db.run('CREATE INDEX IF NOT EXISTS idx_post_unlocks_author ON post_unlocks(author_id)');
+    } catch (e: any) {
+      // Ignorar si ya existen
+    }
+
+    await db.run(`
+      INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)
+    `, ['007_phase9_gifts_and_unlocks', new Date().toISOString()]);
+    console.log('[Database] Migración 007_phase9_gifts_and_unlocks completada.');
+  }
 }
+
+

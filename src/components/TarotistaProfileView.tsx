@@ -1,24 +1,83 @@
-import React, { useState } from 'react';
-import { TarotistaProfile, Video, Review } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { TarotistaProfile, Video, Review, User } from '../types';
+import { FollowsListModal } from './FollowsListModal';
 
 interface TarotistaProfileViewProps {
   profile: TarotistaProfile;
   videos: Video[];
   reviews: Review[];
+  currentUser?: User | null;
   onBookConsultation: (tarotistaId: string) => void;
   onBack?: () => void;
+  onOpenAuthModal?: () => void;
+  onStartConversation?: (targetUserId: string) => void;
 }
 
 export const TarotistaProfileView: React.FC<TarotistaProfileViewProps> = ({
   profile,
   videos,
   reviews,
+  currentUser,
   onBookConsultation,
   onBack,
+  onOpenAuthModal,
+  onStartConversation,
 }) => {
   const [activeTab, setActiveTab] = useState<'videos' | 'reviews' | 'shop'>('videos');
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(profile.followersCount || 0);
+  const [showFollowersModal, setShowFollowersModal] = useState(false);
 
-  const profileVideos = videos.filter(v => v.tarotistaId === profile.id);
+  const targetUserId = profile.userId || profile.id;
+
+  // Cargar estado real de relación y seguidores
+  const fetchRelationship = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(targetUserId)}/relationship`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsFollowing(!!data.isFollowing);
+        setFollowersCount(data.followersCount || 0);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [targetUserId]);
+
+  useEffect(() => {
+    fetchRelationship();
+  }, [fetchRelationship]);
+
+  const handleToggleFollow = async () => {
+    if (!currentUser) {
+      onOpenAuthModal?.();
+      return;
+    }
+    const previous = isFollowing;
+    const previousCount = followersCount;
+    const willFollow = !previous;
+
+    setIsFollowing(willFollow);
+    setFollowersCount(willFollow ? previousCount + 1 : Math.max(0, previousCount - 1));
+
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(targetUserId)}/follow`, {
+        method: willFollow ? 'POST' : 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Error al actualizar seguimiento');
+      }
+      setIsFollowing(!!data.isFollowing);
+      setFollowersCount(data.followersCount);
+    } catch (err: any) {
+      setIsFollowing(previous);
+      setFollowersCount(previousCount);
+      alert(err.message || 'Error de conexión');
+    }
+  };
+
+  const profileVideos = videos.filter(v => v.tarotistaId === profile.id || v.tarotistaId === profile.userId);
   const profileReviews = reviews.filter(r => r.tarotistaId === profile.id);
 
   return (
@@ -79,11 +138,14 @@ export const TarotistaProfileView: React.FC<TarotistaProfileViewProps> = ({
             <span className="text-[9px] text-[#A7A7A7] uppercase tracking-widest">Consultas</span>
           </div>
 
-          <div className="flex flex-col items-center">
-            <span className="font-playfair text-xl font-bold text-[#D4AF37]">
-              {(profile.followersCount / 1000).toFixed(1)}k
+          <div 
+            onClick={() => setShowFollowersModal(true)}
+            className="flex flex-col items-center cursor-pointer group"
+          >
+            <span className="font-playfair text-xl font-bold text-[#D4AF37] group-hover:scale-105 transition-transform">
+              {followersCount}
             </span>
-            <span className="text-[9px] text-[#A7A7A7] uppercase tracking-widest">Seguidores</span>
+            <span className="text-[9px] text-[#A7A7A7] uppercase tracking-widest group-hover:text-[#F7E7C1]">Seguidores</span>
           </div>
         </div>
 
@@ -96,14 +158,56 @@ export const TarotistaProfileView: React.FC<TarotistaProfileViewProps> = ({
             <span className="material-symbols-outlined text-sm">event</span>
             Reservar Consulta
           </button>
-          <button 
-            onClick={() => alert('Función de mensaje directo habilitada en consulta.')}
-            className="px-4 py-3 rounded-full border border-[#D4AF37]/30 text-[#F7E7C1] hover:bg-[#2E1B47] transition-colors"
-          >
-            <span className="material-symbols-outlined text-sm">chat_bubble</span>
-          </button>
+
+          {/* Botón Seguir / Dejar de seguir */}
+          {(!currentUser || currentUser.id !== targetUserId) && (
+            <button
+              onClick={handleToggleFollow}
+              className={`px-5 py-3 rounded-full border text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1 ${
+                isFollowing
+                  ? 'bg-[#1A1026] text-[#A7A7A7] border-[#D4AF37]/30 hover:border-red-400 hover:text-red-400'
+                  : 'bg-[#5A2D82] text-[#D4AF37] border-[#D4AF37] gold-glow hover:scale-105'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {isFollowing ? 'check' : 'person_add'}
+              </span>
+              <span>{isFollowing ? 'Siguiendo' : 'Seguir'}</span>
+            </button>
+          )}
+
+          {(!currentUser || currentUser.id !== targetUserId) && (
+            <button 
+              onClick={() => {
+                if (!currentUser) {
+                  if (onOpenAuthModal) onOpenAuthModal();
+                  return;
+                }
+                if (onStartConversation) {
+                  onStartConversation(targetUserId);
+                }
+              }}
+              className="px-4 py-3 rounded-full border border-[#D4AF37]/30 text-[#F7E7C1] hover:bg-[#2E1B47] transition-colors flex items-center gap-1.5"
+              title="Enviar mensaje privado"
+            >
+              <span className="material-symbols-outlined text-sm">chat_bubble</span>
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider">Mensaje</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Modal de Lista de Seguidores */}
+      <FollowsListModal
+        isOpen={showFollowersModal}
+        userId={targetUserId}
+        type="followers"
+        currentUser={currentUser || null}
+        onClose={() => {
+          setShowFollowersModal(false);
+          fetchRelationship();
+        }}
+      />
 
       {/* Specialties & Bio Section */}
       <section className="px-5 my-4">

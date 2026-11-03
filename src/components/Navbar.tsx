@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Category, User } from '../types';
+import { AlchemicalSunIcon, AstralCompassIcon, SolomonStarIcon } from './EsotericIcons';
 
 interface NavbarProps {
   activeCategory: Category;
@@ -10,6 +11,10 @@ interface NavbarProps {
   onOpenWallet: () => void;
   onOpenSearch: () => void;
   onOpenAdmin: () => void;
+  onOpenCreatePost?: () => void;
+  onOpenMessages?: () => void;
+  onOpenAstraAi?: () => void;
+  unreadMessagesCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -21,10 +26,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWallet,
   onOpenSearch,
   onOpenAdmin,
+  onOpenAstraAi,
 }) => {
-  const categories: Category[] = [
-    'Para ti',
-    'Siguiendo',
+  const [showOraclesMenu, setShowOraclesMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const specialtyCategories: Category[] = [
     'Tarot',
     'Astrología',
     'Horóscopo',
@@ -33,117 +40,170 @@ export const Navbar: React.FC<NavbarProps> = ({
     'Numerología',
     'Reiki',
     'Lunas',
-    'Rituales'
+    'Rituales',
   ];
 
+  const isSpecialtySelected = specialtyCategories.includes(activeCategory);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowOraclesMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 bg-[#0B0911]/85 backdrop-blur-xl border-b border-[#D4AF37]/20 px-4 py-2 flex flex-col items-center">
+    <header className="fixed top-0 left-0 right-0 z-40 bg-[#0B0911]/80 backdrop-blur-xl border-b border-white/5 px-3 sm:px-5 h-14 flex items-center justify-center">
       <div className="w-full max-w-5xl flex justify-between items-center gap-2">
-        {/* Left Side: Authenticated User Info or Access CTA */}
-        <div className="flex items-center gap-2">
-          {currentUser ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#2E1B47]/60 border border-[#D4AF37]/30 text-xs text-[#F7E7C1]">
-                <img
-                  src={currentUser.avatar}
-                  alt={currentUser.name}
-                  className="w-5 h-5 rounded-full object-cover border border-[#D4AF37]"
-                />
-                <span className="font-bold max-w-[90px] truncate hidden sm:inline">{currentUser.name}</span>
-                <span className="text-[9px] uppercase font-bold text-[#D4AF37] bg-[#5A2D82]/80 px-1.5 py-0.5 rounded-full">
-                  {currentUser.role}
-                </span>
+        {/* Left: Minimal Brand Wordmark (Instagram style) */}
+        <div
+          onClick={() => onSelectCategory('Para ti')}
+          className="flex items-center gap-1.5 cursor-pointer group shrink-0"
+        >
+          <span className="text-[#D4AF37] text-xs group-hover:rotate-45 transition-transform">✦</span>
+          <h1 className="font-cinzel text-base sm:text-lg font-bold tracking-[0.22em] text-[#F7E7C1] group-hover:text-[#D4AF37] transition-colors uppercase">
+            KABALY
+          </h1>
+        </div>
+
+        {/* Center: Clean TikTok-style Feed Switcher (Siguiendo | Para ti | Oráculos ▾) */}
+        <div className="flex items-center gap-3 sm:gap-6 relative" ref={menuRef}>
+          <button
+            onClick={() => onSelectCategory('Siguiendo')}
+            className={`relative py-1 text-xs sm:text-sm transition-all ${
+              activeCategory === 'Siguiendo'
+                ? 'font-bold text-[#F7E7C1]'
+                : 'font-medium text-[#F7E7C1]/55 hover:text-[#F7E7C1]/90'
+            }`}
+          >
+            Siguiendo
+            {activeCategory === 'Siguiendo' && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-[#D4AF37] rounded-full shadow-[0_0_8px_#D4AF37]" />
+            )}
+          </button>
+
+          <button
+            onClick={() => onSelectCategory('Para ti')}
+            className={`relative py-1 text-xs sm:text-sm transition-all ${
+              activeCategory === 'Para ti'
+                ? 'font-bold text-[#F7E7C1]'
+                : 'font-medium text-[#F7E7C1]/55 hover:text-[#F7E7C1]/90'
+            }`}
+          >
+            Para ti
+            {activeCategory === 'Para ti' && (
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-[#D4AF37] rounded-full shadow-[0_0_8px_#D4AF37]" />
+            )}
+          </button>
+
+          {/* Compact Dropdown for the 9 Esoteric Specialties */}
+          <div className="relative">
+            <button
+              onClick={() => setShowOraclesMenu(prev => !prev)}
+              className={`relative py-1 text-xs sm:text-sm flex items-center gap-1 transition-all ${
+                isSpecialtySelected
+                  ? 'font-bold text-[#D4AF37]'
+                  : 'font-medium text-[#F7E7C1]/55 hover:text-[#F7E7C1]/90'
+              }`}
+            >
+              <span>{isSpecialtySelected ? activeCategory : 'Oráculos'}</span>
+              <span className="text-[10px] opacity-80">▾</span>
+              {isSpecialtySelected && (
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-[#D4AF37] rounded-full shadow-[0_0_8px_#D4AF37]" />
+              )}
+            </button>
+
+            {showOraclesMenu && (
+              <div className="absolute top-9 left-1/2 -translate-x-1/2 w-48 bg-[#120D1D]/95 backdrop-blur-2xl border border-[#D4AF37]/30 rounded-2xl p-2 shadow-2xl grid grid-cols-1 gap-0.5 z-50">
+                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]/70 border-b border-white/5 mb-1">
+                  Artes Esotéricas
+                </div>
+                {specialtyCategories.map((cat) => {
+                  const selected = activeCategory === cat;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        onSelectCategory(cat);
+                        setShowOraclesMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 rounded-xl text-xs flex items-center justify-between transition-colors ${
+                        selected
+                          ? 'bg-[#D4AF37] text-[#0B0911] font-bold'
+                          : 'text-[#F7E7C1]/80 hover:bg-[#2E1B47]/60 hover:text-[#D4AF37]'
+                      }`}
+                    >
+                      <span>{cat}</span>
+                      {selected && <span>✦</span>}
+                    </button>
+                  );
+                })}
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Minimal Esoteric Actions (Coins, AI Oracle, Search, Auth) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {onOpenAstraAi && (
+            <button
+              onClick={onOpenAstraAi}
+              className="w-8 h-8 rounded-full bg-[#1A1026]/80 border border-[#D4AF37]/25 flex items-center justify-center text-[#D4AF37] hover:border-[#D4AF37] hover:scale-105 transition-all"
+              title="Oráculo Kabaly IA"
+            >
+              <SolomonStarIcon className="w-4 h-4" />
+            </button>
+          )}
+
+          <button
+            onClick={onOpenSearch}
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-[#2E1B47]/70 flex items-center justify-center text-[#F7E7C1] hover:text-[#D4AF37] transition-colors"
+            title="Explorar tarotistas o artes"
+          >
+            <AstralCompassIcon className="w-4 h-4" />
+          </button>
+
+          {currentUser ? (
+            <>
+              <button
+                onClick={onOpenWallet}
+                className="flex items-center gap-1 bg-[#1A1026] border border-[#D4AF37]/35 px-2.5 py-1 rounded-full text-xs font-bold text-[#D4AF37] hover:border-[#D4AF37] transition-all"
+                title="Tu Altar y Monedero"
+              >
+                <AlchemicalSunIcon className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>{currentUser.coinsBalance}</span>
+              </button>
 
               {currentUser.role === 'admin' && (
                 <button
                   onClick={onOpenAdmin}
-                  className="px-2.5 py-1 rounded-full bg-[#D4AF37] text-[#0B0911] font-bold text-xs hover:brightness-110 transition-all flex items-center gap-1"
+                  className="px-2 py-1 rounded-full bg-[#D4AF37] text-[#0B0911] font-bold text-[10px] uppercase tracking-wider hover:brightness-110 transition-all"
                   title="Panel de Administración"
                 >
-                  <span className="material-symbols-outlined text-xs">dashboard</span>
-                  <span className="hidden sm:inline">Admin</span>
+                  Admin
                 </button>
               )}
 
               <button
                 onClick={onLogout}
-                className="p-1.5 rounded-full hover:bg-red-950/60 text-red-300/80 hover:text-red-200 transition-colors"
+                className="w-7 h-7 rounded-full hover:bg-red-950/50 text-[#F7E7C1]/50 hover:text-red-300 flex items-center justify-center transition-colors"
                 title="Cerrar Sesión"
               >
-                <span className="material-symbols-outlined text-base">logout</span>
+                <span className="material-symbols-outlined text-sm">logout</span>
               </button>
-            </div>
+            </>
           ) : (
             <button
               onClick={onOpenAuthModal}
-              className="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-[#2E1B47] to-[#5A2D82] border border-[#D4AF37] text-xs font-bold text-[#D4AF37] hover:scale-105 transition-all gold-glow"
+              className="flex items-center gap-1 px-3 py-1 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] text-xs font-bold hover:scale-105 transition-all shadow-[0_0_12px_rgba(212,175,55,0.3)]"
             >
-              <span className="material-symbols-outlined text-sm">login</span>
-              <span>Acceder</span>
+              <span>✦</span>
+              <span>Iniciar</span>
             </button>
           )}
-        </div>
-
-        {/* Center: Brand Logo */}
-        <div className="flex flex-col items-center cursor-pointer">
-          <h1 className="font-cinzel text-xl md:text-2xl font-bold tracking-[0.25em] text-[#F7E7C1] text-gold-glow uppercase leading-none">
-            KABALY
-          </h1>
-          <span className="text-[9px] font-manrope text-[#D4AF37] tracking-[0.3em] uppercase opacity-90 mt-0.5">
-            TU DESTINO • TU MAGIA
-          </span>
-        </div>
-
-        {/* Right Side: Wallet Coins & Search */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onOpenSearch}
-            className="p-1.5 rounded-full hover:bg-[#2E1B47] text-[#F7E7C1] transition-colors"
-            title="Buscar tarotistas o temas"
-          >
-            <span className="material-symbols-outlined text-xl">search</span>
-          </button>
-
-          {currentUser ? (
-            <button
-              onClick={onOpenWallet}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-[#2E1B47] to-[#5A2D82] border border-[#D4AF37]/40 px-3 py-1 rounded-full text-xs font-bold text-[#D4AF37] hover:scale-105 transition-all gold-glow"
-              title="Ver Monedero"
-            >
-              <span className="material-symbols-outlined text-sm filled text-[#D4AF37]">toll</span>
-              <span>{currentUser.coinsBalance}</span>
-            </button>
-          ) : (
-            <button
-              onClick={onOpenAuthModal}
-              className="flex items-center gap-1 text-xs text-[#D4AF37] hover:underline"
-            >
-              <span>+ Info</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Horizontal Scrollable Categories Filter */}
-      <div className="w-full max-w-5xl overflow-x-auto no-scrollbar py-2">
-        <div className="flex items-center gap-2 min-w-max px-2">
-          {categories.map((cat) => {
-            const isSelected = activeCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => onSelectCategory(cat)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                  isSelected
-                    ? 'bg-[#D4AF37] text-[#0B0911] shadow-[0_0_12px_rgba(212,175,55,0.4)] font-bold'
-                    : 'bg-[#1A1026] text-[#A7A7A7] hover:text-[#F7E7C1] border border-[#D4AF37]/20 hover:border-[#D4AF37]/50'
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
         </div>
       </div>
     </header>

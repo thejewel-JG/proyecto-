@@ -7,4 +7,9 @@ coverage/
 !.env.example
 *.db*
 data/*.db*
+uploads/*
+!uploads/.gitkeep
+private_storage/*
+!private_storage/.gitkeep
+
 
