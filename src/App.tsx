@@ -520,6 +520,8 @@ export const App: React.FC = () => {
         {activeConsultation ? (
           <ConsultationRoomView
             consultation={activeConsultation}
+            currentUser={currentUser || undefined}
+            tarotistaProfiles={tarotistaProfiles}
             onTransitionStatus={handleTransitionStatus}
             onSubmitReview={handleSubmitReview}
             onClose={() => setActiveConsultationId(null)}
@@ -875,6 +877,7 @@ export const App: React.FC = () => {
                   createdAt: '',
                 }}
                 tarotistaProfiles={tarotistaProfiles}
+                onViewProfile={(id) => setSelectedTarotistaId(id)}
                 onBookConsultation={(id) => {
                   if (!currentUser) {
                     setShowAuthModal(true);

@@ -5,6 +5,7 @@ interface AstraAiViewProps {
   currentUser: User;
   tarotistaProfiles: TarotistaProfile[];
   onBookConsultation: (tarotistaId: string) => void;
+  onViewProfile?: (tarotistaId: string) => void;
   onBack?: () => void;
 }
 
@@ -12,6 +13,7 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
   currentUser,
   tarotistaProfiles,
   onBookConsultation,
+  onViewProfile,
   onBack,
 }) => {
   const [messages, setMessages] = useState<
@@ -105,8 +107,22 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
         </div>
       </header>
 
-      {/* Suggested Quick Prompts */}
+      {/* Suggested Quick Prompts + Personalized Natal Triad Prompt */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4">
+        {currentUser.sunSign && (
+          <button
+            onClick={() =>
+              handleSendPrompt(
+                `Mi Sol es ${currentUser.sunSign}${currentUser.moonSign ? `, Luna en ${currentUser.moonSign}` : ''}${
+                  currentUser.risingSign ? ` y Ascendente ${currentUser.risingSign}` : ''
+                }. ¿Qué mensaje tiene el cosmos hoy para mi Tríada Astral?`
+              )
+            }
+            className="px-3 py-1.5 rounded-full bg-gradient-to-r from-[#2E1B47] to-[#5A2D82] border border-[#D4AF37] text-xs font-bold text-[#D4AF37] whitespace-nowrap transition-all"
+          >
+            ☉ Lectura para mi Sol en {currentUser.sunSign}
+          </button>
+        )}
         {[
           '🔮 Extraer carta del día',
           '✨ Horóscopo de hoy',
@@ -148,16 +164,45 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
 
               {/* Drawn Tarot Card Visual Box if present */}
               {m.cardDrawn && (
-                <div className="mt-3 p-3 bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl flex items-center gap-3">
-                  <img
-                    src={m.cardDrawn.imageUrl}
-                    alt={m.cardDrawn.name}
-                    className="w-16 h-24 object-cover rounded-lg border border-[#D4AF37]"
-                  />
-                  <div>
-                    <span className="font-playfair text-sm text-[#D4AF37] font-bold block">{m.cardDrawn.name}</span>
-                    <p className="text-[11px] text-[#A7A7A7] italic">{m.cardDrawn.meaning}</p>
+                <div className="mt-3 p-3 bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={m.cardDrawn.imageUrl}
+                      alt={m.cardDrawn.name}
+                      className="w-16 h-24 object-cover rounded-lg border border-[#D4AF37]"
+                    />
+                    <div>
+                      <span className="font-playfair text-sm text-[#D4AF37] font-bold block">{m.cardDrawn.name}</span>
+                      <p className="text-[11px] text-[#A7A7A7] italic">{m.cardDrawn.meaning}</p>
+                    </div>
                   </div>
+                  {currentUser.id && currentUser.id !== 'anon' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/stories', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              mediaUrl: m.cardDrawn!.imageUrl,
+                              mediaType: 'image',
+                              caption: `🔮 Kabaly AI me reveló: ${m.cardDrawn!.name} — ${m.cardDrawn!.meaning}`.slice(0, 120),
+                            }),
+                          });
+                          if (res.ok) {
+                            alert('✨ ¡Tu carta revelada se ha compartido en tus Auras Efímeras (Stories 24h)!');
+                          }
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      className="px-2.5 py-1.5 rounded-full bg-[#2E1B47] border border-[#D4AF37]/40 hover:border-[#D4AF37] text-[10px] font-bold text-[#D4AF37] shrink-0"
+                      title="Compartir carta en mis Stories de 24h"
+                    >
+                      ✦ Subir a Story
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -175,10 +220,13 @@ export const AstraAiView: React.FC<AstraAiViewProps> = ({
       {/* Recommended Verified Tarotista Card Banner */}
       {recommendedTarotista && (
         <div className="mb-3 bg-gradient-to-r from-[#2E1B47] to-[#1A1026] border border-[#D4AF37]/40 rounded-2xl p-3 flex justify-between items-center text-xs">
-          <div className="flex items-center gap-2.5">
+          <div
+            onClick={() => onViewProfile && onViewProfile(recommendedTarotista.id)}
+            className="flex items-center gap-2.5 cursor-pointer group"
+          >
             <img src={recommendedTarotista.avatar} alt={recommendedTarotista.professionalName} className="w-9 h-9 rounded-full object-cover border border-[#D4AF37]" />
             <div>
-              <span className="font-bold text-[#F7E7C1] flex items-center gap-1">
+              <span className="font-bold text-[#F7E7C1] group-hover:text-[#D4AF37] flex items-center gap-1 transition">
                 {recommendedTarotista.professionalName}
                 <span className="material-symbols-outlined text-xs text-[#D4AF37] filled">verified</span>
               </span>
