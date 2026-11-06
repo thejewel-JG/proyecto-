@@ -680,6 +680,30 @@ export async function createComment(params: {
     }).catch(() => {});
   }
 
+  // Detectar menciones @usuario en el comentario y enviar notificación 'mention'
+  const mentionMatches = cleanContent.match(/@([a-zA-Z0-9_.-]+)/g);
+  if (mentionMatches && mentionMatches.length > 0) {
+    for (const rawMention of mentionMatches.slice(0, 5)) {
+      const cleanHandle = rawMention.toLowerCase();
+      const stripHandle = rawMention.slice(1).toLowerCase();
+      const mentionedUser = await db.get<any>(
+        `SELECT id FROM users WHERE LOWER(handle) = ? OR LOWER(handle) = ? OR LOWER(REPLACE(name, ' ', '')) = ? LIMIT 1`,
+        [cleanHandle, `@${stripHandle}`, stripHandle]
+      );
+      if (mentionedUser && mentionedUser.id !== params.authorId) {
+        await createNotification({
+          userId: mentionedUser.id,
+          actorId: params.authorId,
+          actorName: params.authorName,
+          actorAvatar: params.authorAvatar || '',
+          type: 'mention',
+          referenceId: params.videoId,
+          message: `te ha mencionado en el oráculo: «${cleanContent.slice(0, 45)}»`,
+        }).catch(() => {});
+      }
+    }
+  }
+
   return {
     id: commentId,
     videoId: params.videoId,

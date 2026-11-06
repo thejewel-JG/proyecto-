@@ -2645,6 +2645,29 @@ async function createComment(params) {
     }).catch(() => {
     });
   }
+  const mentionMatches = cleanContent.match(/@([a-zA-Z0-9_.-]+)/g);
+  if (mentionMatches && mentionMatches.length > 0) {
+    for (const rawMention of mentionMatches.slice(0, 5)) {
+      const cleanHandle = rawMention.toLowerCase();
+      const stripHandle = rawMention.slice(1).toLowerCase();
+      const mentionedUser = await db.get(
+        `SELECT id FROM users WHERE LOWER(handle) = ? OR LOWER(handle) = ? OR LOWER(REPLACE(name, ' ', '')) = ? LIMIT 1`,
+        [cleanHandle, `@${stripHandle}`, stripHandle]
+      );
+      if (mentionedUser && mentionedUser.id !== params.authorId) {
+        await createNotification({
+          userId: mentionedUser.id,
+          actorId: params.authorId,
+          actorName: params.authorName,
+          actorAvatar: params.authorAvatar || "",
+          type: "mention",
+          referenceId: params.videoId,
+          message: `te ha mencionado en el or\xE1culo: \xAB${cleanContent.slice(0, 45)}\xBB`
+        }).catch(() => {
+        });
+      }
+    }
+  }
   return {
     id: commentId,
     videoId: params.videoId,
@@ -3914,8 +3937,13 @@ var ALLOWED_MIME_TYPES = /* @__PURE__ */ new Set([
   "image/gif",
   "video/mp4",
   "video/webm",
-  "video/quicktime"
+  "video/quicktime",
   // .mov
+  "audio/webm",
+  "audio/ogg",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/wav"
 ]);
 var uploadMediaMiddleware = (0, import_multer.default)({
   storage,

@@ -171,9 +171,27 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
       return;
     }
     setReplyingTo({ id: comment.id, authorName: comment.authorName });
+    const mentionPrefix = `@${comment.authorName.toLowerCase().replace(/\s+/g, '')} `;
+    if (!text.startsWith(mentionPrefix)) {
+      setText(mentionPrefix + text);
+    }
     if (inputRef.current) {
       inputRef.current.focus();
     }
+  };
+
+  const renderCommentText = (content: string) => {
+    const parts = content.split(/(@[a-zA-Z0-9_.-]+|#[a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('@') || part.startsWith('#')) {
+        return (
+          <span key={idx} className="text-[#D4AF37] font-bold">
+            {part}
+          </span>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
   };
 
   if (!isOpen) return null;
@@ -305,7 +323,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                           </span>
                         </div>
                         <p className={`text-[11px] leading-relaxed break-words ${comment.isDeleted ? 'italic text-[#7A7280]' : 'text-[#F7E7C1]'}`}>
-                          {comment.content}
+                          {comment.isDeleted ? comment.content : renderCommentText(comment.content)}
                         </p>
                       </div>
 
@@ -390,7 +408,7 @@ export const CommentsDrawer: React.FC<CommentsDrawerProps> = ({
                                 </span>
                               </div>
                               <p className="text-[10px] text-[#cec3d1] leading-relaxed break-words">
-                                {reply.content}
+                                {renderCommentText(reply.content)}
                               </p>
                             </div>
 

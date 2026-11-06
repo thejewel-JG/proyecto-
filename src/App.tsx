@@ -940,6 +940,7 @@ export const App: React.FC = () => {
                     onRefreshUser={fetchState}
                     onCreatePost={async () => {}}
                     onSelectConsultation={(id) => setActiveConsultationId(id)}
+                    onViewPublicProfile={(uid) => setSelectedTarotistaId(uid)}
                     onSelectVideo={(id) => {
                       const v = videos.find(x => x.id === id);
                       if (v) {

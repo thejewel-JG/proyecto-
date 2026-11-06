@@ -83,10 +83,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onSwitchUserRole,
   onSelectVideo,
   onSelectConsultation,
+  onViewPublicProfile,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingPost, setEditingPost] = useState<Video | null>(null);
+  const [activeGridPost, setActiveGridPost] = useState<Video | null>(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [userPosts, setUserPosts] = useState<Video[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
@@ -350,7 +352,60 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [editRulingArcana, setEditRulingArcana] = useState(currentUser.rulingArcana || '');
   const [editSpiritualGift, setEditSpiritualGift] = useState(currentUser.spiritualGift || '');
   const [editIsPrivate, setEditIsPrivate] = useState(!!currentUser.isPrivate);
+  const [birthDateInput, setBirthDateInput] = useState('');
+  const [birthTimeInput, setBirthTimeInput] = useState('12:00');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  // Calculadora automática de Tríada Natal y Arcano Regente a partir de Fecha y Hora de Nacimiento
+  const handleCalculateNatalTriad = () => {
+    if (!birthDateInput) {
+      alert('Selecciona tu fecha de nacimiento para calcular tu Tríada Astral y Arcano Regente.');
+      return;
+    }
+    const [yearStr, monthStr, dayStr] = birthDateInput.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+
+    // 1. Signo Solar por fecha
+    let sun = 'Capricornio';
+    if ((month === 3 && day >= 21) || (month === 4 && day <= 19)) sun = 'Aries';
+    else if ((month === 4 && day >= 20) || (month === 5 && day <= 20)) sun = 'Tauro';
+    else if ((month === 5 && day >= 21) || (month === 6 && day <= 20)) sun = 'Géminis';
+    else if ((month === 6 && day >= 21) || (month === 7 && day <= 22)) sun = 'Cáncer';
+    else if ((month === 7 && day >= 23) || (month === 8 && day <= 22)) sun = 'Leo';
+    else if ((month === 8 && day >= 23) || (month === 9 && day <= 22)) sun = 'Virgo';
+    else if ((month === 9 && day >= 23) || (month === 10 && day <= 22)) sun = 'Libra';
+    else if ((month === 10 && day >= 23) || (month === 11 && day <= 21)) sun = 'Escorpio';
+    else if ((month === 11 && day >= 22) || (month === 12 && day <= 21)) sun = 'Sagitario';
+    else if ((month === 12 && day >= 22) || (month === 1 && day <= 19)) sun = 'Capricornio';
+    else if ((month === 1 && day >= 20) || (month === 2 && day <= 18)) sun = 'Acuario';
+    else if ((month === 2 && day >= 19) || (month === 3 && day <= 20)) sun = 'Piscis';
+
+    // 2. Signo Lunar aproximado por ciclo sinódico
+    const sunIdx = ZODIAC_SIGNS.indexOf(sun);
+    const moonIdx = (sunIdx + Math.floor((day + (year % 19) * 11) % 12)) % 12;
+    const moon = ZODIAC_SIGNS[moonIdx];
+
+    // 3. Ascendente por hora de nacimiento (2h por signo desde el amanecer)
+    const [hourStr] = (birthTimeInput || '12:00').split(':');
+    const hour = parseInt(hourStr || '12', 10);
+    const risingOffset = Math.floor(((hour - 6 + 24) % 24) / 2);
+    const rising = ZODIAC_SIGNS[(sunIdx + risingOffset) % 12];
+
+    // 4. Arcano Mayor Regente por reducción teosófica de la fecha
+    const digitsSum = birthDateInput
+      .replace(/-/g, '')
+      .split('')
+      .reduce((acc, d) => acc + parseInt(d, 10), 0);
+    const arcanaIndex = digitsSum > 21 ? (digitsSum % 22) : digitsSum;
+    const rulingArcana = MAJOR_ARCANA[arcanaIndex] || MAJOR_ARCANA[17];
+
+    setEditSunSign(sun);
+    setEditMoonSign(moon);
+    setEditRisingSign(rising);
+    setEditRulingArcana(rulingArcana);
+  };
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -884,7 +939,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     post.isPinned ? 'border-[#D4AF37] shadow-[0_0_16px_rgba(212,175,55,0.25)]' : 'border-[#D4AF37]/30 hover:border-[#D4AF37]'
                   }`}
                 >
-                  <div className="relative aspect-[3/4] bg-black">
+                  <div
+                    onClick={() => setActiveGridPost(post)}
+                    className="relative aspect-[3/4] bg-black cursor-pointer"
+                  >
                     {post.mediaType === 'image' ? (
                       <img src={post.videoUrl || post.thumbnailUrl} alt={post.title} className="w-full h-full object-cover" />
                     ) : (
@@ -996,7 +1054,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onClick={() => onSelectVideo?.(post.id)}
                   className="bg-[#1A1026] border border-[#D4AF37]/30 rounded-2xl overflow-hidden group hover:border-[#D4AF37] transition-all relative flex flex-col justify-between cursor-pointer"
                 >
-                  <div className="relative aspect-[3/4] bg-black">
+                  <div
+                    onClick={() => setActiveGridPost(post)}
+                    className="relative aspect-[3/4] bg-black cursor-pointer"
+                  >
                     {post.mediaType === 'image' ? (
                       <img src={post.videoUrl || post.thumbnailUrl} alt={post.title} className="w-full h-full object-cover" />
                     ) : (
@@ -1045,6 +1106,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         userId={currentUser.id}
         type={followsModal.type}
         currentUser={currentUser}
+        onSelectUser={(uid) => {
+          setFollowsModal(prev => ({ ...prev, isOpen: false }));
+          onViewPublicProfile?.(uid);
+        }}
         onClose={() => {
           setFollowsModal(prev => ({ ...prev, isOpen: false }));
           fetchRelationshipStats();
@@ -1666,9 +1731,41 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
               {/* Tríada Astral (Sol, Luna, Ascendente) */}
               <div className="pt-1 border-t border-white/5 space-y-2.5">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] block">
-                  ✦ Tríada Astral & Arcano Regente (Activa la Sinastría con otros perfiles)
-                </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] block">
+                    ✦ Tríada Astral & Arcano Regente (Activa la Sinastría con otros perfiles)
+                  </span>
+                </div>
+
+                {/* Calculadora Automática de Carta Natal Rápida */}
+                <div className="bg-[#0B0911]/80 border border-[#D4AF37]/25 rounded-2xl p-2.5 flex flex-wrap items-end gap-2">
+                  <div className="flex-1 min-w-[125px]">
+                    <label className="text-[9px] text-[#A09BAE] block mb-1">Fecha de Nacimiento</label>
+                    <input
+                      type="date"
+                      value={birthDateInput}
+                      onChange={(e) => setBirthDateInput(e.target.value)}
+                      className="w-full bg-[#1A1026] border border-[#D4AF37]/30 rounded-xl px-2 py-1.5 text-[11px] text-[#F7E7C1]"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <label className="text-[9px] text-[#A09BAE] block mb-1">Hora Natal</label>
+                    <input
+                      type="time"
+                      value={birthTimeInput}
+                      onChange={(e) => setBirthTimeInput(e.target.value)}
+                      className="w-full bg-[#1A1026] border border-[#D4AF37]/30 rounded-xl px-2 py-1.5 text-[11px] text-[#F7E7C1]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCalculateNatalTriad}
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold text-[10px] uppercase tracking-wider hover:scale-105 transition shrink-0"
+                  >
+                    ✨ Calcular Tríada
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="text-[10px] text-[#A09BAE] block mb-1">☉ Signo Solar</label>
@@ -1877,6 +1974,79 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL 4.5: Visor Deslizable de Publicaciones de Mi Cuadrícula */}
+      {activeGridPost && (() => {
+        const list = activeSubTab === 'guardados' ? savedPosts : myPosts;
+        const idx = list.findIndex(p => p.id === activeGridPost.id);
+        const hasPrev = idx > 0;
+        const hasNext = idx >= 0 && idx < list.length - 1;
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+            onClick={() => setActiveGridPost(null)}
+          >
+            <div
+              className="relative max-w-sm w-full aspect-[9/16] max-h-[84vh] rounded-3xl overflow-hidden border-2 border-[#D4AF37] bg-[#0B0911] shadow-2xl flex flex-col justify-between"
+              onClick={e => e.stopPropagation()}
+            >
+              {activeGridPost.mediaType === 'image' ? (
+                <img
+                  src={activeGridPost.videoUrl || activeGridPost.thumbnailUrl}
+                  alt={activeGridPost.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              ) : (
+                <video
+                  src={activeGridPost.videoUrl}
+                  poster={activeGridPost.thumbnailUrl}
+                  autoPlay
+                  loop
+                  controls
+                  playsInline
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              )}
+              <div className="relative z-10 p-4 bg-gradient-to-b from-black/85 to-transparent flex items-center justify-between">
+                <span className="text-xs font-bold text-[#D4AF37]">
+                  ✦ {activeGridPost.category} ({idx + 1}/{list.length})
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {hasPrev && (
+                    <button
+                      onClick={() => setActiveGridPost(list[idx - 1])}
+                      className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-[#D4AF37] flex items-center justify-center"
+                    >
+                      ▲
+                    </button>
+                  )}
+                  {hasNext && (
+                    <button
+                      onClick={() => setActiveGridPost(list[idx + 1])}
+                      className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-[#D4AF37] flex items-center justify-center"
+                    >
+                      ▼
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveGridPost(null)}
+                    className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="relative z-10 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                <h4 className="font-cinzel text-sm font-bold text-[#F7E7C1]">{activeGridPost.title}</h4>
+                {activeGridPost.description && (
+                  <p className="text-xs text-[#F7E7C1]/80 mt-1 line-clamp-3">{activeGridPost.description}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL 5: Solicitud KYC para convertirse en Tarotista Verificado */}
       {showKycModal && (

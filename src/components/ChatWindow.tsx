@@ -36,6 +36,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Blocking state
@@ -250,6 +253,71 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     setAttachmentPreview(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  // Grabación de Nota de Voz Astral (MediaRecorder)
+  const handleToggleVoiceRecord = async () => {
+    if (isBlockedByMe || hasBlockedMe) return;
+
+    if (isRecordingVoice && mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingVoice(false);
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('Tu navegador no permite grabar audio directamente.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) audioChunksRef.current.push(ev.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (audioBlob.size < 200) return;
+
+        setIsUploadingAttachment(true);
+        try {
+          const formData = new FormData();
+          formData.append('file', audioBlob, `voice_${Date.now()}.webm`);
+          const upRes = await fetch('/api/upload', { method: 'POST', body: formData });
+          const upData = await upRes.json();
+          if (upRes.ok && upData.url) {
+            const voiceContent = `🎙️ Nota de Voz Astral: ${upData.url}`;
+            const clientMessageId = `cmsg_${Date.now()}_voice`;
+            const res = await fetch(`/api/conversations/${encodeURIComponent(conversation.id)}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: voiceContent, clientMessageId }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.message) {
+                setMessages(prev => [...prev, data.message]);
+              }
+            }
+          }
+        } catch {
+          alert('No se pudo enviar la nota de voz.');
+        } finally {
+          setIsUploadingAttachment(false);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecordingVoice(true);
+    } catch {
+      alert('Permite el acceso al micrófono para enviar una nota de voz.');
     }
   };
 
@@ -593,13 +661,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                     </div>
                   )}
 
-                  {/* Texto seguro y Tarjeta Interactiva si es una Visión Compartida */}
+                  {/* Texto seguro, Nota de Voz o Tarjeta Interactiva si es una Visión Compartida */}
                   {msg.content && msg.content !== '[Imagen adjunta]' && (() => {
                     const postMatch = msg.content.match(/[?&]post=([a-zA-Z0-9_-]+)/);
                     const sharedPostId = postMatch ? postMatch[1] : null;
+                    const voiceMatch = msg.content.match(/🎙️ Nota de Voz Astral:\s*(\/uploads\/[^\s]+)/);
+                    const voiceUrl = voiceMatch ? voiceMatch[1] : null;
                     return (
                       <div className="space-y-2">
-                        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                        {voiceUrl ? (
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-bold text-[#D4AF37] flex items-center gap-1">
+                              🎙️ Susurro de Voz Astral
+                            </span>
+                            <audio src={voiceUrl} controls className="h-8 max-w-[210px] sm:max-w-[240px]" />
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                        )}
                         {sharedPostId && (
                           <div className="p-2.5 rounded-xl bg-[#0B0911]/90 border border-[#D4AF37]/40 flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
@@ -752,6 +831,22 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             title="Adjuntar imagen"
           >
             <span className="material-symbols-outlined text-xl">image</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleToggleVoiceRecord}
+            disabled={isBlockedByMe || hasBlockedMe || isUploadingAttachment}
+            className={`p-2 rounded-full transition-all disabled:opacity-30 ${
+              isRecordingVoice
+                ? 'bg-red-600 text-white animate-pulse shadow-[0_0_12px_rgba(220,38,38,0.8)]'
+                : 'text-[#D4AF37] hover:bg-[#2E1B47]'
+            }`}
+            title={isRecordingVoice ? 'Detener y enviar nota de voz' : 'Grabar nota de voz'}
+          >
+            <span className="material-symbols-outlined text-xl">
+              {isRecordingVoice ? 'stop_circle' : 'mic'}
+            </span>
           </button>
 
           <input

@@ -8,6 +8,7 @@ interface FollowsListModalProps {
   currentUser: User | null;
   onClose: () => void;
   onOpenAuthModal?: () => void;
+  onSelectUser?: (userId: string) => void;
 }
 
 export const FollowsListModal: React.FC<FollowsListModalProps> = ({
@@ -17,6 +18,7 @@ export const FollowsListModal: React.FC<FollowsListModalProps> = ({
   currentUser,
   onClose,
   onOpenAuthModal,
+  onSelectUser,
 }) => {
   const [users, setUsers] = useState<FollowUser[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -98,16 +100,26 @@ export const FollowsListModal: React.FC<FollowsListModalProps> = ({
             </p>
           ) : (
             users.map((user) => (
-              <div key={user.id} className="flex items-center justify-between gap-3 p-2 rounded-2xl bg-[#0B0911]/50 border border-[#D4AF37]/15">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div key={user.id} className="flex items-center justify-between gap-3 p-2 rounded-2xl bg-[#0B0911]/50 border border-[#D4AF37]/15 hover:border-[#D4AF37]/40 transition">
+                <div
+                  onClick={() => {
+                    if (onSelectUser) {
+                      onClose();
+                      onSelectUser(user.id);
+                    }
+                  }}
+                  className={`flex items-center gap-2.5 min-w-0 ${onSelectUser ? 'cursor-pointer group' : ''}`}
+                >
                   <img
                     src={user.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'}
                     alt={user.name}
-                    className="w-9 h-9 rounded-full object-cover border border-[#D4AF37]/40 flex-shrink-0"
+                    className="w-9 h-9 rounded-full object-cover border border-[#D4AF37]/40 flex-shrink-0 group-hover:scale-105 transition"
                   />
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-[#F7E7C1] truncate">{user.name}</p>
-                    <span className="text-[10px] text-[#A7A7A7] uppercase font-semibold block">{user.role}</span>
+                    <p className="text-xs font-bold text-[#F7E7C1] group-hover:text-[#D4AF37] truncate transition">{user.name}</p>
+                    <span className="text-[10px] text-[#A7A7A7] uppercase font-semibold block">
+                      {user.role === 'tarotista' ? '🔮 Vidente' : '✨ Buscador'}
+                    </span>
                   </div>
                 </div>
 

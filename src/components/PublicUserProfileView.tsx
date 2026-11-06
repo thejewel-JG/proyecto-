@@ -10,7 +10,8 @@ import {
 } from './EsotericIcons';
 
 interface PublicUserProfileViewProps {
-  targetUserId: string;
+  userId?: string;
+  targetUserId?: string;
   currentUser: User | null;
   reviews?: Review[];
   onBack: () => void;
@@ -18,6 +19,8 @@ interface PublicUserProfileViewProps {
   onStartConversation: (userId: string) => void;
   onBookConsultation: (tarotistaId: string) => void;
   onSelectUserProfile?: (userId: string) => void;
+  onLikeVideo?: (videoId: string) => void;
+  onUnlockVideo?: (videoId: string) => void;
 }
 
 const ZODIAC_ELEMENTS: Record<string, 'Fuego' | 'Tierra' | 'Aire' | 'Agua'> = {
@@ -53,6 +56,7 @@ function computeElementalAffinity(signA?: string, signB?: string): { percent: nu
 }
 
 export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
+  userId,
   targetUserId,
   currentUser,
   reviews = [],
@@ -60,7 +64,11 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
   onOpenAuthModal,
   onStartConversation,
   onBookConsultation,
+  onSelectUserProfile,
+  onLikeVideo,
 }) => {
+  const initialId = userId || targetUserId || '';
+  const [viewedUserId, setViewedUserId] = useState<string>(initialId);
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'posts' | 'exclusive' | 'reviews'>('posts');
@@ -70,11 +78,18 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
   });
   const [activeHighlight, setActiveHighlight] = useState<ProfileHighlight | null>(null);
   const [activePostModal, setActivePostModal] = useState<Video | null>(null);
+  const [showTrailerModal, setShowTrailerModal] = useState(false);
+
+  useEffect(() => {
+    const nextId = userId || targetUserId || '';
+    if (nextId) setViewedUserId(nextId);
+  }, [userId, targetUserId]);
 
   const fetchProfile = useCallback(async () => {
+    if (!viewedUserId) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(targetUserId)}/public`);
+      const res = await fetch(`/api/users/${encodeURIComponent(viewedUserId)}/public`);
       if (res.ok) {
         const data = await res.json();
         setProfile(data.profile || null);
@@ -86,7 +101,7 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [targetUserId]);
+  }, [viewedUserId]);
 
   useEffect(() => {
     fetchProfile();
@@ -354,6 +369,16 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
               <TwinMoonsIcon className="w-4 h-4" />
               <span>Susurro</span>
             </button>
+
+            {tar && (
+              <button
+                onClick={() => setShowTrailerModal(true)}
+                className="px-4 py-2.5 rounded-full bg-[#1A1026] border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#2E1B47] transition-all flex items-center gap-1.5 text-xs font-bold"
+                title="Ver Tráiler de Bienvenida del Vidente"
+              >
+                <span>🎬 Presentación</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -496,11 +521,74 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
         userId={profile.id}
         type={followsModal.type}
         currentUser={currentUser}
+        onSelectUser={(uid) => {
+          setViewedUserId(uid);
+          if (onSelectUserProfile) onSelectUserProfile(uid);
+        }}
         onClose={() => {
           setFollowsModal(prev => ({ ...prev, isOpen: false }));
           fetchProfile();
         }}
       />
+
+      {/* Modal Tráiler de Bienvenida del Vidente */}
+      {showTrailerModal && tar && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+          onClick={() => setShowTrailerModal(false)}
+        >
+          <div
+            className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden bg-[#0B0911] border-2 border-[#D4AF37] shadow-2xl flex flex-col justify-between"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {profile.posts.find(p => p.mediaType === 'video')?.videoUrl ? (
+              <video
+                src={profile.posts.find(p => p.mediaType === 'video')!.videoUrl}
+                autoPlay
+                loop
+                controls
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            ) : (
+              <img
+                src={profile.coverImage || profile.avatar}
+                alt={tar.professionalName}
+                className="absolute inset-0 w-full h-full object-cover opacity-75"
+              />
+            )}
+            <div className="relative z-10 p-4 bg-gradient-to-b from-black/85 to-transparent flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover border border-[#D4AF37]" />
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] block">
+                    🎬 Tráiler de Bienvenida
+                  </span>
+                  <span className="font-cinzel text-xs font-bold text-[#F7E7C1]">{tar.professionalName}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTrailerModal(false)}
+                className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="relative z-10 p-4 bg-gradient-to-t from-black/95 via-black/70 to-transparent space-y-3">
+              <p className="text-xs text-[#F7E7C1]/90 leading-relaxed">{tar.bio || profile.bio}</p>
+              <button
+                onClick={() => {
+                  setShowTrailerModal(false);
+                  onBookConsultation(tar.id);
+                }}
+                className="w-full py-2.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] text-xs font-bold uppercase tracking-wider gold-glow"
+              >
+                🔮 Reservar Consulta Ahora (€{tar.pricePerMinEur.toFixed(2)}/m)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Visor de Aura Destacada */}
       {activeHighlight && (
@@ -532,51 +620,96 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
         </div>
       )}
 
-      {/* Modal Reproductor de Publicación de Cuadrícula */}
-      {activePostModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
-          onClick={() => setActivePostModal(null)}
-        >
+      {/* Modal Reproductor de Publicación de Cuadrícula (Deslizable tipo Reels) */}
+      {activePostModal && (() => {
+        const currentList = activeTab === 'exclusive' ? exclusivePosts : profile.posts;
+        const currentIndex = currentList.findIndex(p => p.id === activePostModal.id);
+        const hasPrev = currentIndex > 0;
+        const hasNext = currentIndex >= 0 && currentIndex < currentList.length - 1;
+
+        return (
           <div
-            className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden bg-[#0B0911] border border-[#D4AF37]/40 flex flex-col justify-between"
-            onClick={e => e.stopPropagation()}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+            onClick={() => setActivePostModal(null)}
           >
-            {activePostModal.mediaType === 'image' || !activePostModal.videoUrl ? (
-              <img
-                src={activePostModal.videoUrl || activePostModal.thumbnailUrl}
-                alt={activePostModal.title}
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            ) : (
-              <video
-                src={activePostModal.videoUrl}
-                poster={activePostModal.thumbnailUrl}
-                autoPlay
-                loop
-                controls
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            )}
-            <div className="relative z-10 p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between">
-              <span className="text-xs font-bold text-[#D4AF37]">✦ {activePostModal.category}</span>
-              <button
-                onClick={() => setActivePostModal(null)}
-                className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="relative z-10 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
-              <p className="text-xs font-bold text-[#F7E7C1]">{activePostModal.title}</p>
-              {activePostModal.description && (
-                <p className="text-[11px] text-[#F7E7C1]/75 mt-1">{activePostModal.description}</p>
+            <div
+              className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden bg-[#0B0911] border border-[#D4AF37]/40 flex flex-col justify-between"
+              onClick={e => e.stopPropagation()}
+            >
+              {activePostModal.mediaType === 'image' || !activePostModal.videoUrl ? (
+                <img
+                  src={activePostModal.videoUrl || activePostModal.thumbnailUrl}
+                  alt={activePostModal.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              ) : (
+                <video
+                  src={activePostModal.videoUrl}
+                  poster={activePostModal.thumbnailUrl}
+                  autoPlay
+                  loop
+                  controls
+                  playsInline
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
               )}
+              <div className="relative z-10 p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between">
+                <span className="text-xs font-bold text-[#D4AF37]">
+                  ✦ {activePostModal.category} ({currentIndex + 1}/{currentList.length})
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {hasPrev && (
+                    <button
+                      onClick={() => setActivePostModal(currentList[currentIndex - 1])}
+                      className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-[#D4AF37] flex items-center justify-center hover:bg-black"
+                      title="Visión anterior"
+                    >
+                      ▲
+                    </button>
+                  )}
+                  {hasNext && (
+                    <button
+                      onClick={() => setActivePostModal(currentList[currentIndex + 1])}
+                      className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-[#D4AF37] flex items-center justify-center hover:bg-black"
+                      title="Siguiente visión"
+                    >
+                      ▼
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActivePostModal(null)}
+                    className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="relative z-10 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-end justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-[#F7E7C1]">{activePostModal.title}</p>
+                  {activePostModal.description && (
+                    <p className="text-[11px] text-[#F7E7C1]/75 mt-1 line-clamp-2">{activePostModal.description}</p>
+                  )}
+                </div>
+                {onLikeVideo && (
+                  <button
+                    onClick={() => {
+                      onLikeVideo(activePostModal.id);
+                      setActivePostModal(prev => prev ? { ...prev, likes: prev.likes + 1 } : null);
+                    }}
+                    className="flex flex-col items-center gap-0.5 text-[#D4AF37] shrink-0"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-black/60 border border-[#D4AF37]/40 flex items-center justify-center">
+                      <SacredFlameIcon className="w-5 h-5" filled />
+                    </div>
+                    <span className="text-[10px] font-bold">{activePostModal.likes}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
