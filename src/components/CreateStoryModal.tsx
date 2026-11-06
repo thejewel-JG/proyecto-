@@ -16,6 +16,8 @@ export const CreateStoryModal: React.FC<CreateStoryModalProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [caption, setCaption] = useState('');
+  const [saveAsHighlight, setSaveAsHighlight] = useState(false);
+  const [highlightTitle, setHighlightTitle] = useState('Mi Aura');
   const [status, setStatus] = useState<'idle' | 'uploading' | 'saving' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -97,10 +99,24 @@ export const CreateStoryModal: React.FC<CreateStoryModalProps> = ({
         throw new Error(storyData.error || 'Error al registrar la story.');
       }
 
-      // Éxito
+      // Éxito: Si también marcó guardar como Aura Destacada permanente, la fijamos
+      if (saveAsHighlight && highlightTitle.trim()) {
+        await fetch('/api/highlights', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: highlightTitle.trim(),
+            coverUrl: upData.url,
+            mediaUrl: upData.url,
+            mediaType: upData.mediaType || mediaType,
+          }),
+        }).catch(() => {});
+      }
+
       onStoryCreated(storyData.story);
       handleRemoveMedia();
       setCaption('');
+      setSaveAsHighlight(false);
       setStatus('idle');
       onClose();
     } catch (err: any) {
@@ -194,6 +210,47 @@ export const CreateStoryModal: React.FC<CreateStoryModalProps> = ({
               placeholder="Ej: Carta del día: El Mago 🔮"
               className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl px-3 py-2 text-xs text-[#F7E7C1] placeholder:text-[#7A7280] outline-none focus:border-[#D4AF37]"
             />
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {[
+                '🎴 Elige tu Carta en el Oráculo Superior',
+                '🌙 Energía Lunar de Hoy',
+                '✦ Susúrrame tu signo para una lectura',
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setCaption(preset)}
+                  className="px-2 py-0.5 rounded-full bg-[#0B0911] border border-[#D4AF37]/25 hover:border-[#D4AF37] text-[9px] text-[#D4AF37]"
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Opción de fijar directamente en Auras Destacadas del Perfil */}
+          <div className="p-2.5 rounded-xl bg-[#0B0911]/80 border border-[#D4AF37]/25 space-y-2">
+            <label className="flex items-center justify-between cursor-pointer">
+              <span className="text-[11px] font-bold text-[#F7E7C1]">
+                ✦ Fijar también en mis Auras Destacadas
+              </span>
+              <input
+                type="checkbox"
+                checked={saveAsHighlight}
+                onChange={(e) => setSaveAsHighlight(e.target.checked)}
+                className="accent-[#D4AF37]"
+              />
+            </label>
+            {saveAsHighlight && (
+              <input
+                type="text"
+                maxLength={24}
+                value={highlightTitle}
+                onChange={(e) => setHighlightTitle(e.target.value)}
+                placeholder="Título del Aura (ej. Rituales, Tiradas)"
+                className="w-full bg-[#1A1026] border border-[#D4AF37]/30 rounded-lg px-2.5 py-1.5 text-[11px] text-[#F7E7C1]"
+              />
+            )}
           </div>
 
           {/* Error Message */}

@@ -8,9 +8,10 @@ interface LiveStreamViewProps {
   gifts: Gift[];
   onSendGift: (streamId: string, giftId: string) => void;
   onJoinQueue: (streamId: string, durationMinutes: number, type: 'chat' | 'audio' | 'video') => void;
-  onBookConsultation: (tarotistaId: string) => void;
+  onBookConsultation?: (tarotistaId: string) => void;
   onOpenWallet: () => void;
   onCallNextQueueUser?: (streamId: string) => void;
+  onViewProfile?: (userId: string) => void;
 }
 
 export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
@@ -23,6 +24,7 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
   onBookConsultation,
   onOpenWallet,
   onCallNextQueueUser,
+  onViewProfile,
 }) => {
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
   const [confirmingGift, setConfirmingGift] = useState<Gift | null>(null);
@@ -30,6 +32,9 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
   const [giftCatalog, setGiftCatalog] = useState<Gift[]>(gifts || []);
   const [processedEvents] = useState<Set<string>>(() => new Set());
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isFollowingHost, setIsFollowingHost] = useState(false);
+  const [liveFlamesCount, setLiveFlamesCount] = useState(128);
+  const [flameBurst, setFlameBurst] = useState(false);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -330,7 +335,10 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
       <header className="relative z-20 flex justify-between items-center px-4 py-3">
         {/* Profile Mini Card */}
         <div className="glass-card rounded-full pl-1.5 pr-4 py-1 flex items-center gap-2.5">
-          <div className="relative">
+          <div
+            onClick={() => onViewProfile && onViewProfile(stream.tarotistaId)}
+            className="relative cursor-pointer"
+          >
             <img
               src={stream.tarotistaAvatar}
               alt={stream.tarotistaName}
@@ -338,8 +346,11 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
             />
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-black" />
           </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-[#F7E7C1] flex items-center gap-1">
+          <div
+            onClick={() => onViewProfile && onViewProfile(stream.tarotistaId)}
+            className="flex flex-col cursor-pointer"
+          >
+            <span className="text-xs font-bold text-[#F7E7C1] hover:text-[#D4AF37] flex items-center gap-1">
               {stream.tarotistaName}
               <span className="material-symbols-outlined text-[#D4AF37] text-xs filled">verified</span>
             </span>
@@ -347,8 +358,21 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
               DIRECTO EN VIVO
             </span>
           </div>
-          <button className="bg-[#5A2D82] text-[#D4AF37] px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[#D4AF37]/30 hover:brightness-110">
-            Seguir
+          <button
+            onClick={async () => {
+              const targetId = profile?.userId || stream.tarotistaId;
+              setIsFollowingHost(!isFollowingHost);
+              await fetch(`/api/users/${encodeURIComponent(targetId)}/follow`, {
+                method: isFollowingHost ? 'DELETE' : 'POST',
+              }).catch(() => {});
+            }}
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition ${
+              isFollowingHost
+                ? 'bg-[#1A1026] text-[#F7E7C1]/80 border-[#D4AF37]/30'
+                : 'bg-[#5A2D82] text-[#D4AF37] border-[#D4AF37]/30 hover:brightness-110'
+            }`}
+          >
+            {isFollowingHost ? '✓ Siguiendo' : 'Seguir'}
           </button>
         </div>
 
@@ -458,6 +482,23 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
             <span>{isInQueue ? 'En Cola' : '+ Cola'}</span>
           </button>
 
+          {/* Live Sacred Flame Tap Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setLiveFlamesCount(c => c + 1);
+              setFlameBurst(true);
+              setTimeout(() => setFlameBurst(false), 450);
+            }}
+            className={`px-3 py-2 rounded-full bg-[#1A1026] border border-[#D4AF37]/40 text-[#D4AF37] text-xs font-bold flex items-center gap-1 transition-transform ${
+              flameBurst ? 'scale-125 shadow-[0_0_16px_#D4AF37]' : 'hover:scale-105'
+            }`}
+            title="Enviar Llama Sagrada al Directo"
+          >
+            <span>🔥</span>
+            <span className="text-[10px]">{liveFlamesCount}</span>
+          </button>
+
           {/* Gift Drawer Trigger */}
           <button
             onClick={() => setShowGiftDrawer(true)}
@@ -470,7 +511,7 @@ export const LiveStreamView: React.FC<LiveStreamViewProps> = ({
 
         {/* Main CTA: Book Private Reading */}
         <button
-          onClick={() => onBookConsultation(stream.tarotistaId)}
+          onClick={() => onBookConsultation && onBookConsultation(stream.tarotistaId)}
           className="w-full bg-gradient-to-r from-[#5A2D82] to-[#2E1B47] border border-[#D4AF37]/50 text-[#F7E7C1] font-bold py-3 rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 gold-glow hover:brightness-110 active:scale-95 transition-all"
         >
           <span className="material-symbols-outlined text-[#D4AF37] filled">bolt</span>

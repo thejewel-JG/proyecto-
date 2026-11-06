@@ -841,6 +841,15 @@ export const App: React.FC = () => {
                 gifts={gifts}
                 onSendGift={handleSendGift}
                 onJoinQueue={handleJoinQueue}
+                onViewProfile={(uid) => setSelectedTarotistaId(uid)}
+                onBookConsultation={(tarotistaId) => {
+                  if (!currentUser) {
+                    setShowAuthModal(true);
+                    return;
+                  }
+                  const tar = tarotistaProfiles.find(t => t.id === tarotistaId || t.userId === tarotistaId);
+                  if (tar) setBookingTarotista(tar);
+                }}
                 onOpenWallet={() => {
                   if (!currentUser) {
                     setShowAuthModal(true);

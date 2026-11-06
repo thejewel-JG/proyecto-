@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
-import { User, TarotistaProfile, Consultation, Report, LedgerTransaction } from '../types';
+import React, { useState, useEffect } from 'react';
+import { User, TarotistaProfile, Consultation, Report, LedgerTransaction, WithdrawalRequest } from '../types';
 
 interface AdminPanelProps {
-  currentUser: User;
+  currentUser?: User;
   tarotistaProfiles: TarotistaProfile[];
   consultations: Consultation[];
   reports: Report[];
   ledger: LedgerTransaction[];
+  withdrawals?: WithdrawalRequest[];
   onApproveTarotista: (profileId: string, approve: boolean) => void;
   onResolveDispute: (consultationId: string, refundClient: boolean) => void;
   onBack: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
-  currentUser,
   tarotistaProfiles,
   consultations,
   reports,
@@ -22,7 +22,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onResolveDispute,
   onBack,
 }) => {
-  const [activeTab, setActiveTab] = useState<'kyc' | 'disputes' | 'reports' | 'finance'>('kyc');
+  const [activeTab, setActiveTab] = useState<'kyc' | 'disputes' | 'reports' | 'chat_reports' | 'finance'>('kyc');
+  const [chatReports, setChatReports] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/moderation/messages/reports')
+      .then(res => (res.ok ? res.json() : { reports: [] }))
+      .then(data => setChatReports(data.reports || []))
+      .catch(() => {});
+  }, []);
 
   const pendingKycProfiles = tarotistaProfiles.filter(p => p.kycStatus === 'pendiente');
   const disputedConsultations = consultations.filter(c => c.status === 'disputada');
@@ -110,6 +118,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           Reportes de Contenido ({pendingReports.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('chat_reports')}
+          className={`py-3 px-5 text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
+            activeTab === 'chat_reports'
+              ? 'text-[#D4AF37] border-b-2 border-[#D4AF37]'
+              : 'text-[#A7A7A7] hover:text-[#F7E7C1]'
+          }`}
+        >
+          Moderación DM ({chatReports.length})
         </button>
         <button
           onClick={() => setActiveTab('finance')}
@@ -231,6 +249,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Tab 3.5: Private Message Moderation Reports */}
+      {activeTab === 'chat_reports' && (
+        <div className="space-y-3">
+          {chatReports.length === 0 ? (
+            <div className="p-8 text-center text-xs text-[#A7A7A7] glass-card rounded-2xl">
+              No hay mensajes privados reportados pendientes de moderación.
+            </div>
+          ) : (
+            chatReports.map((cr) => (
+              <div key={cr.id} className="glass-card p-4 rounded-2xl border border-[#D4AF37]/25 space-y-1.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-[#D4AF37]">
+                    Reporte de {cr.reporterName || cr.reporterId} contra {cr.reportedUserName || cr.reportedUserId}
+                  </span>
+                  <span className="text-[10px] text-[#A09BAE]">{cr.reason}</span>
+                </div>
+                <p className="text-[#F7E7C1] bg-[#0B0911] p-2.5 rounded-xl border border-white/10 italic">
+                  "{cr.messageContent || cr.details || 'Mensaje reportado'}"
+                </p>
+              </div>
+            ))
+          )}
         </div>
       )}
 
