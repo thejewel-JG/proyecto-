@@ -655,11 +655,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
         <StoriesBar
           storyGroups={storyGroups}
           currentUser={currentUser}
+          tarotistaProfiles={tarotistaProfiles}
           onOpenCreateStory={() => {
             if (!currentUser) onOpenAuthModal?.();
             else setShowCreateStoryModal(true);
           }}
           onSelectStoryGroup={(group) => setSelectedStoryGroup(group)}
+          onSelectProfile={(userId) => onViewTarotistaProfile(userId)}
         />
 
         <div className="relative w-full h-[calc(100vh-210px)] bg-[#0B0911] rounded-3xl shadow-2xl border border-[#D4AF37]/20 flex items-center justify-center p-8 text-center">
@@ -706,6 +708,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
             fetchStories();
           }}
           onViewersRequested={(storyId) => setViewersStoryId(storyId)}
+          onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
         />
 
         <StoryViewersModal
@@ -727,11 +730,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
       <StoriesBar
         storyGroups={storyGroups}
         currentUser={currentUser}
+        tarotistaProfiles={tarotistaProfiles}
         onOpenCreateStory={() => {
           if (!currentUser) onOpenAuthModal?.();
           else setShowCreateStoryModal(true);
         }}
         onSelectStoryGroup={(group) => setSelectedStoryGroup(group)}
+        onSelectProfile={(userId) => onViewTarotistaProfile(userId)}
       />
 
       {/* 2. Canvas Inmersivo Estilo TikTok / Reels con Iconografía Esotérica */}
@@ -1264,6 +1269,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           fetchStories();
         }}
         onViewersRequested={(storyId) => setViewersStoryId(storyId)}
+        onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
       />
 
       <StoryViewersModal

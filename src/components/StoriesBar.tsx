@@ -1,21 +1,29 @@
 import React from 'react';
-import { StoryGroup, User } from '../types';
+import { StoryGroup, TarotistaProfile, User } from '../types';
 
 interface StoriesBarProps {
   storyGroups: StoryGroup[];
   currentUser: User | null;
+  tarotistaProfiles?: TarotistaProfile[];
   onOpenCreateStory: () => void;
   onSelectStoryGroup: (group: StoryGroup) => void;
+  onSelectProfile?: (userId: string) => void;
 }
 
 export const StoriesBar: React.FC<StoriesBarProps> = ({
   storyGroups,
   currentUser,
+  tarotistaProfiles = [],
   onOpenCreateStory,
   onSelectStoryGroup,
+  onSelectProfile,
 }) => {
   const myStoryGroup = currentUser ? storyGroups.find(g => g.userId === currentUser.id) : null;
   const otherGroups = storyGroups.filter(g => !currentUser || g.userId !== currentUser.id);
+  const storyUserIds = new Set(storyGroups.map(g => g.userId));
+  const onlineTarotistasWithoutStory = tarotistaProfiles.filter(
+    t => !storyUserIds.has(t.id) && !storyUserIds.has(t.userId)
+  );
 
   return (
     <div className="w-full overflow-x-auto no-scrollbar py-1.5 flex items-center gap-3.5 px-2 border-b border-white/5">
@@ -84,6 +92,32 @@ export const StoriesBar: React.FC<StoriesBarProps> = ({
           </div>
           <span className="text-[10px] text-[#F7E7C1]/75 mt-1 font-medium truncate max-w-[60px] text-center group-hover:text-[#D4AF37] transition-colors">
             {group.userName}
+          </span>
+        </div>
+      ))}
+
+      {/* 3. Videntes Destacados en Línea (Acceso directo al Altar si no tienen Story de 24h) */}
+      {onlineTarotistasWithoutStory.map((tar) => (
+        <div
+          key={tar.id}
+          onClick={() => onSelectProfile && onSelectProfile(tar.id)}
+          className="flex flex-col items-center flex-shrink-0 cursor-pointer group"
+        >
+          <div className="relative w-13 h-13 rounded-full p-[2px] border border-[#D4AF37]/45 group-hover:scale-105 transition-transform">
+            <img
+              src={tar.avatar}
+              alt={tar.name}
+              className="w-12 h-12 object-cover rounded-full bg-[#1A1026] border border-[#0B0911]"
+            />
+            {tar.availability === 'online' && (
+              <span
+                className="w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0B0911] absolute bottom-0 right-0"
+                title="En línea ahora"
+              />
+            )}
+          </div>
+          <span className="text-[10px] text-[#F7E7C1]/75 mt-1 font-medium truncate max-w-[60px] text-center group-hover:text-[#D4AF37] transition-colors">
+            {tar.name}
           </span>
         </div>
       ))}

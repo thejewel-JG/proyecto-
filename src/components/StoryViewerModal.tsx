@@ -10,6 +10,7 @@ interface StoryViewerModalProps {
   onStoryDeleted?: (storyId: string) => void;
   onStoryViewed?: (storyId: string) => void;
   onViewersRequested?: (storyId: string) => void;
+  onOpenUserProfile?: (userId: string) => void;
 }
 
 const ORACLE_CARDS = [
@@ -25,6 +26,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   onClose,
   onStoryDeleted,
   onStoryViewed,
+  onOpenUserProfile,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -227,14 +229,23 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
 
         {/* Header con Creador, Tiempo y Opciones */}
         <div className="absolute top-7 left-3 right-3 z-30 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent p-2 rounded-2xl">
-          <div className="flex items-center gap-2">
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenUserProfile) {
+                onClose();
+                onOpenUserProfile(storyGroup.userId);
+              }
+            }}
+            className="flex items-center gap-2 cursor-pointer group"
+          >
             <img
               src={storyGroup.userAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'}
               alt={storyGroup.userName}
-              className="w-8 h-8 rounded-full object-cover border border-[#D4AF37]"
+              className="w-8 h-8 rounded-full object-cover border border-[#D4AF37] group-hover:scale-105 transition"
             />
             <div>
-              <p className="text-xs font-bold text-[#F7E7C1] leading-tight flex items-center gap-1">
+              <p className="text-xs font-bold text-[#F7E7C1] group-hover:text-[#D4AF37] leading-tight flex items-center gap-1 transition">
                 {storyGroup.userName}
               </p>
               <span className="text-[10px] text-[#D4AF37]/80">
