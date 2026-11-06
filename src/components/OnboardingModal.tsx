@@ -1,4 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+
+const ZODIAC_SIGNS = [
+  'Aries', 'Tauro', 'Géminis', 'Cáncer', 'Leo', 'Virgo',
+  'Libra', 'Escorpio', 'Sagitario', 'Capricornio', 'Acuario', 'Piscis'
+];
 
 interface OnboardingModalProps {
   onComplete: (data: {
@@ -6,6 +11,7 @@ interface OnboardingModalProps {
     email: string;
     role: 'cliente' | 'tarotista';
     isAgeVerified: boolean;
+    sunSign?: string;
     tarotistaData?: {
       professionalName: string;
       specialties: string[];
@@ -23,6 +29,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
   const [role, setRole] = useState<'cliente' | 'tarotista'>('cliente');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [sunSign, setSunSign] = useState('');
   const [isAgeVerified, setIsAgeVerified] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
@@ -33,6 +40,29 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
   const [pricePerMinCoins, setPricePerMinCoins] = useState(20);
   const [country, setCountry] = useState('España');
   const [docFileUploaded, setDocFileUploaded] = useState(false);
+  const [docIdentityUrl, setDocIdentityUrl] = useState('');
+  const docInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDocFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setDocIdentityUrl(data.url);
+        setDocFileUploaded(true);
+      } else {
+        setDocIdentityUrl(file.name);
+        setDocFileUploaded(true);
+      }
+    } catch {
+      setDocIdentityUrl(file.name);
+      setDocFileUploaded(true);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +84,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
       email,
       role,
       isAgeVerified,
+      sunSign: sunSign || undefined,
       tarotistaData: role === 'tarotista' ? {
         professionalName: professionalName || name,
         specialties: ['Tarot', 'Astrología', 'Lunas'],
@@ -62,7 +93,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         pricePerMinCoins,
         languages: ['Español'],
         country,
-        docIdentityUrl: docFileUploaded ? 'documento_identidad_subido.pdf' : 'doc_demo.pdf',
+        docIdentityUrl: docIdentityUrl || (docFileUploaded ? 'documento_identidad_subido.pdf' : 'doc_demo.pdf'),
       } : undefined,
     });
   };
@@ -131,6 +162,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
             />
           </div>
 
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-[#D4AF37] block mb-1">☉ Signo Solar (Opcional)</label>
+            <select
+              value={sunSign}
+              onChange={(e) => setSunSign(e.target.value)}
+              className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl p-3 text-xs text-[#F7E7C1] outline-none focus:border-[#D4AF37]"
+            >
+              <option value="">Seleccionar signo zodiacal...</option>
+              {ZODIAC_SIGNS.map(s => <option key={s} value={s}>☉ {s}</option>)}
+            </select>
+          </div>
+
           {/* Additional Fields if Tarotista */}
           {role === 'tarotista' && (
             <div className="p-4 bg-[#2E1B47]/40 border border-[#D4AF37]/30 rounded-2xl space-y-3">
@@ -180,18 +223,25 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                 />
               </div>
 
-              {/* Upload PDF Document */}
+              {/* Upload Document */}
               <div className="p-3 bg-[#0B0911] border border-dashed border-[#D4AF37]/50 rounded-xl text-center">
+                <input
+                  ref={docInputRef}
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={handleDocFileChange}
+                  className="hidden"
+                />
                 <span className="material-symbols-outlined text-2xl text-[#D4AF37] block mb-1">upload_file</span>
                 <span className="text-[10px] text-[#A7A7A7] block">Adjuntar Documento de Identidad (DNI/Pasaporte)</span>
                 <button
                   type="button"
-                  onClick={() => setDocFileUploaded(true)}
+                  onClick={() => docInputRef.current?.click()}
                   className={`mt-2 px-3 py-1 rounded-full text-[10px] font-bold ${
                     docFileUploaded ? 'bg-green-500 text-black' : 'bg-[#5A2D82] text-[#D4AF37]'
                   }`}
                 >
-                  {docFileUploaded ? '✓ Documento Subido' : 'Subir Documento PDF'}
+                  {docFileUploaded ? '✓ Documento Adjuntado' : 'Subir Documento / Foto'}
                 </button>
               </div>
             </div>

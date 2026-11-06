@@ -7,6 +7,11 @@ interface AuthModalProps {
   onAuthSuccess: (user: any) => void;
 }
 
+const ZODIAC_SIGNS = [
+  'Aries', 'Tauro', 'Géminis', 'Cáncer', 'Leo', 'Virgo',
+  'Libra', 'Escorpio', 'Sagitario', 'Capricornio', 'Acuario', 'Piscis'
+];
+
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
@@ -17,6 +22,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [sunSign, setSunSign] = useState('');
   const [role, setRole] = useState<UserRole>('cliente');
   const [isAgeVerified, setIsAgeVerified] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -107,6 +113,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (!res.ok) {
         setErrorMessage(data.error || 'Error al crear la cuenta.');
         return;
+      }
+
+      if (sunSign && data.user) {
+        await fetch('/api/users/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: data.user.name,
+            handle: data.user.handle || `@${data.user.name.toLowerCase().replace(/\s+/g, '')}`,
+            bio: data.user.bio || `Alma de ${sunSign} conectada al cosmos en KABALY ✨`,
+            avatar: data.user.avatar,
+            sunSign,
+          }),
+        }).catch(() => {});
+        data.user.sunSign = sunSign;
       }
 
       onAuthSuccess(data.user);
@@ -275,6 +296,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
                 />
               </div>
+            </div>
+
+            {/* Signo Solar */}
+            <div>
+              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
+                ☉ Signo Solar (Opcional)
+              </label>
+              <select
+                value={sunSign}
+                onChange={(e) => setSunSign(e.target.value)}
+                className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+              >
+                <option value="">Seleccionar signo...</option>
+                {ZODIAC_SIGNS.map(s => <option key={s} value={s}>☉ {s}</option>)}
+              </select>
             </div>
 
             {/* Role selection */}

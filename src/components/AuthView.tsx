@@ -6,6 +6,11 @@ interface AuthViewProps {
   onExploreAsGuest?: () => void;
 }
 
+const ZODIAC_SIGNS = [
+  'Aries', 'Tauro', 'Géminis', 'Cáncer', 'Leo', 'Virgo',
+  'Libra', 'Escorpio', 'Sagitario', 'Capricornio', 'Acuario', 'Piscis'
+];
+
 export const AuthView: React.FC<AuthViewProps> = ({
   onAuthSuccess,
   onExploreAsGuest,
@@ -15,6 +20,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [sunSign, setSunSign] = useState('');
   const [role, setRole] = useState<UserRole>('cliente');
   const [isAgeVerified, setIsAgeVerified] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -102,6 +108,21 @@ export const AuthView: React.FC<AuthViewProps> = ({
       if (!res.ok) {
         setErrorMessage(data.error || 'Error al crear la cuenta.');
         return;
+      }
+
+      if (sunSign && data.user) {
+        await fetch('/api/users/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: data.user.name,
+            handle: data.user.handle || `@${data.user.name.toLowerCase().replace(/\s+/g, '')}`,
+            bio: data.user.bio || `Alma de ${sunSign} conectada al cosmos en KABALY ✨`,
+            avatar: data.user.avatar,
+            sunSign,
+          }),
+        }).catch(() => {});
+        data.user.sunSign = sunSign;
       }
 
       onAuthSuccess(data.user);
@@ -268,6 +289,21 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl px-4 py-3 text-xs text-[#F7E7C1] placeholder:text-[#A7A7A7]/50 focus:outline-none focus:border-[#D4AF37] transition-colors"
                 />
               </div>
+            </div>
+
+            {/* Signo Solar para Sinastría */}
+            <div>
+              <label className="block text-[11px] font-semibold text-[#D4AF37] uppercase tracking-wider mb-1.5">
+                ☉ Tu Signo Solar (Opcional • Activa Sinastría Elemental)
+              </label>
+              <select
+                value={sunSign}
+                onChange={(e) => setSunSign(e.target.value)}
+                className="w-full bg-[#0B0911] border border-[#D4AF37]/30 rounded-xl px-4 py-2.5 text-xs text-[#F7E7C1] focus:outline-none focus:border-[#D4AF37]"
+              >
+                <option value="">Seleccionar mi signo zodiacal...</option>
+                {ZODIAC_SIGNS.map(s => <option key={s} value={s}>☉ {s}</option>)}
+              </select>
             </div>
 
             {/* Selector de Rol */}
