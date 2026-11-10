@@ -63,6 +63,45 @@
   .video-overlay-gradient {
     background: linear-gradient(180deg, rgba(11, 9, 17, 0.65) 0%, rgba(11, 9, 17, 0) 20%, rgba(11, 9, 17, 0) 58%, rgba(11, 9, 17, 0.96) 100%);
   }
+
+  .gold-gradient-btn {
+    background: linear-gradient(90deg, #F5D061 0%, #E5B54F 50%, #C9972C 100%);
+    color: #120B1D;
+    font-weight: 700;
+    box-shadow: 0 4px 20px rgba(229, 181, 79, 0.35);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .gold-gradient-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 25px rgba(229, 181, 79, 0.45);
+  }
+
+  .gold-gradient-btn:active {
+    transform: scale(0.98);
+  }
+
+  .mystic-card {
+    background: rgba(22, 11, 36, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(212, 175, 55, 0.25);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+
+  .mystic-input {
+    background: rgba(14, 7, 23, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #F7E7C1;
+    transition: all 0.2s ease;
+  }
+
+  .mystic-input:focus {
+    border-color: #D4AF37;
+    outline: none;
+    box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
+  }
 }
 
 /* Material Symbols Fill state */

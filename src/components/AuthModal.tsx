@@ -20,6 +20,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [sunSign, setSunSign] = useState('');
@@ -141,240 +142,217 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0B0911]/90 backdrop-blur-2xl flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 md:p-8 max-w-md w-full gold-glow my-auto relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl animate-fade-in overflow-y-auto">
+      <div className="relative mystic-card rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E5B54F]/35 shadow-[0_15px_50px_rgba(0,0,0,0.8)] my-8">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#A7A7A7] hover:text-[#F7E7C1] transition-colors"
-          title="Cerrar"
+          className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[#A09BAE] hover:text-[#F7E7C1] hover:border-[#E5B54F]/50 transition-colors"
         >
-          <span className="material-symbols-outlined text-2xl">close</span>
+          <span className="material-symbols-outlined text-lg">close</span>
         </button>
 
-        {/* Brand Header */}
+        {/* Emblem & Brand Header */}
         <div className="text-center mb-6">
-          <h2 className="font-cinzel text-2xl font-bold tracking-[0.2em] text-[#F7E7C1] text-gold-glow uppercase">
+          <div className="w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+            <svg
+              className="w-10 h-10 text-[#E5B54F] drop-shadow-[0_0_15px_rgba(229,181,79,0.7)]"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M12 0L14.5 8.5L23 11L14.5 13.5L12 22L9.5 13.5L1 11L9.5 8.5L12 0Z" />
+              <circle cx="12" cy="11" r="2.2" fill="#FFF8E7" />
+            </svg>
+          </div>
+          <h2 className="font-cinzel text-2xl font-bold tracking-[0.25em] text-[#F7E7C1] uppercase">
             KABALY
           </h2>
-          <span className="text-[10px] text-[#D4AF37] tracking-[0.3em] uppercase block mt-1">
-            Tu Espacio Místico & Sagrado
+          <span className="text-[10px] text-[#E5B54F] tracking-[0.35em] uppercase font-semibold block mt-0.5">
+            TU DESTINO, TU MAGIA
           </span>
         </div>
 
-        {/* Auth Tabs */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-[#0B0911] rounded-2xl border border-[#D4AF37]/30 mb-6">
+        {/* Tabs */}
+        <div className="flex border-b border-white/10 mb-6 relative">
           <button
             type="button"
             onClick={() => { setActiveTab('login'); setErrorMessage(''); }}
-            className={`py-2 text-xs font-bold rounded-xl transition-all ${
+            className={`flex-1 pb-3 text-xs sm:text-sm font-semibold tracking-wide transition-all relative ${
               activeTab === 'login'
-                ? 'bg-[#5A2D82] text-[#D4AF37] border border-[#D4AF37]'
-                : 'text-[#A7A7A7] hover:text-[#F7E7C1]'
+                ? 'text-[#F7E7C1] font-bold'
+                : 'text-[#A09BAE] hover:text-[#F7E7C1]'
             }`}
           >
-            Iniciar Sesión
+            Iniciar sesión
+            {activeTab === 'login' && (
+              <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-[#E5B54F] to-transparent shadow-[0_0_8px_#E5B54F]" />
+            )}
           </button>
           <button
             type="button"
             onClick={() => { setActiveTab('register'); setErrorMessage(''); }}
-            className={`py-2 text-xs font-bold rounded-xl transition-all ${
+            className={`flex-1 pb-3 text-xs sm:text-sm font-semibold tracking-wide transition-all relative ${
               activeTab === 'register'
-                ? 'bg-[#5A2D82] text-[#D4AF37] border border-[#D4AF37]'
-                : 'text-[#A7A7A7] hover:text-[#F7E7C1]'
+                ? 'text-[#F7E7C1] font-bold'
+                : 'text-[#A09BAE] hover:text-[#F7E7C1]'
             }`}
           >
-            Crear Cuenta
+            Crear cuenta
+            {activeTab === 'register' && (
+              <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-[#E5B54F] to-transparent shadow-[0_0_8px_#E5B54F]" />
+            )}
           </button>
         </div>
 
-        {/* Error message alert */}
+        {/* Error Alert */}
         {errorMessage && (
-          <div className="mb-4 p-3 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 text-xs flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm text-red-400">error</span>
+          <div className="mb-4 p-3 rounded-xl bg-red-950/70 border border-red-500/40 text-red-200 text-xs flex items-center gap-2">
+            <span className="material-symbols-outlined text-red-400 text-base shrink-0">error</span>
             <span>{errorMessage}</span>
           </div>
         )}
 
-        {/* LOGIN FORM */}
+        {/* Login Form */}
         {activeTab === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
-            <div>
-              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                Correo Electrónico
-              </label>
+            <div className="mystic-input rounded-xl px-4 py-3 flex items-center gap-3">
+              <span className="material-symbols-outlined text-[#A09BAE] text-base">mail</span>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="ejemplo@kabaly.app"
-                className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-4 py-2.5 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                placeholder="Correo electrónico"
+                className="bg-transparent flex-1 text-xs sm:text-sm text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
               />
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                Contraseña
-              </label>
+            <div className="mystic-input rounded-xl px-4 py-3 flex items-center gap-3">
+              <span className="material-symbols-outlined text-[#A09BAE] text-base">lock</span>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-4 py-2.5 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                placeholder="Contraseña"
+                className="bg-transparent flex-1 text-xs sm:text-sm text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="text-[#A09BAE] hover:text-[#F7E7C1]"
+              >
+                <span className="material-symbols-outlined text-base">
+                  {showPassword ? 'visibility_off' : 'visibility'}
+                </span>
+              </button>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-[#D4AF37] text-[#0B0911] font-bold py-3.5 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-[1.02] active:scale-95 transition-all mt-4 disabled:opacity-50"
+              className="gold-gradient-btn w-full py-3.5 rounded-full text-xs sm:text-sm font-bold tracking-wider uppercase flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
             >
-              {isLoading ? 'Verificando...' : 'Entrar a KABALY'}
+              <span>{isLoading ? 'Entrando...' : 'Entrar en KABALY'}</span>
+              <span className="text-sm">✦</span>
             </button>
           </form>
         )}
 
-        {/* REGISTER FORM */}
+        {/* Register Form */}
         {activeTab === 'register' && (
-          <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
-            <div>
-              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                Nombre o Alias Místico
-              </label>
+          <form onSubmit={handleRegisterSubmit} className="space-y-3">
+            <div className="mystic-input rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-[#A09BAE] text-base">person</span>
               <input
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Ej. Alex Cosmos"
-                className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-4 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                placeholder="Nombre Completo o Sagrado"
+                className="bg-transparent flex-1 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
               />
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                Correo Electrónico
-              </label>
+            <div className="mystic-input rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-[#A09BAE] text-base">mail</span>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tucorreo@ejemplo.com"
-                className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-4 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                placeholder="Correo electrónico"
+                className="bg-transparent flex-1 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                  Contraseña
-                </label>
+              <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-2">
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 8 car."
-                  className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                  placeholder="Contraseña"
+                  className="bg-transparent w-full text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                 />
               </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                  Confirmar
-                </label>
+              <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-2">
                 <input
                   type="password"
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repetir"
-                  className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                  placeholder="Repetir clave"
+                  className="bg-transparent w-full text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                 />
               </div>
             </div>
 
-            {/* Signo Solar */}
-            <div>
-              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                ☉ Signo Solar (Opcional)
-              </label>
+            <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#E5B54F] text-sm">auto_awesome</span>
               <select
                 value={sunSign}
                 onChange={(e) => setSunSign(e.target.value)}
-                className="w-full bg-[#0B0911] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-xs text-[#F7E7C1] focus:border-[#D4AF37] outline-none"
+                className="bg-transparent flex-1 text-xs text-[#F7E7C1] outline-none cursor-pointer"
               >
-                <option value="">Seleccionar signo...</option>
-                {ZODIAC_SIGNS.map(s => <option key={s} value={s}>☉ {s}</option>)}
+                <option value="" className="bg-[#120B1D]">Signo Solar (Opcional)...</option>
+                {ZODIAC_SIGNS.map((s) => (
+                  <option key={s} value={s} className="bg-[#120B1D] text-[#F7E7C1]">
+                    {s}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {/* Role selection */}
-            <div>
-              <label className="text-[11px] font-bold text-[#D4AF37] uppercase tracking-wider block mb-1">
-                Tipo de Cuenta
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRole('cliente')}
-                  className={`p-2 rounded-xl border text-xs font-bold transition-all text-center ${
-                    role === 'cliente'
-                      ? 'bg-[#5A2D82] border-[#D4AF37] text-[#D4AF37]'
-                      : 'bg-[#0B0911] border-[#D4AF37]/20 text-[#A7A7A7]'
-                  }`}
-                >
-                  ✨ Consultante
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRole('tarotista')}
-                  className={`p-2 rounded-xl border text-xs font-bold transition-all text-center ${
-                    role === 'tarotista'
-                      ? 'bg-[#5A2D82] border-[#D4AF37] text-[#D4AF37]'
-                      : 'bg-[#0B0911] border-[#D4AF37]/20 text-[#A7A7A7]'
-                  }`}
-                >
-                  🔮 Tarotista / Guía
-                </button>
-              </div>
-            </div>
-
-            {/* Verification Checkboxes */}
-            <div className="space-y-2 pt-1 text-[11px] text-[#A7A7A7]">
-              <label className="flex items-start gap-2 cursor-pointer">
+            <div className="space-y-1.5 pt-1 text-[10px] text-[#A09BAE]">
+              <label className="flex items-start gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
-                  required
                   checked={isAgeVerified}
                   onChange={(e) => setIsAgeVerified(e.target.checked)}
-                  className="mt-0.5 accent-[#D4AF37]"
+                  className="mt-0.5 rounded border-white/20 text-[#E5B54F] focus:ring-0 bg-transparent"
                 />
-                <span>Confirmo bajo declaración jurada que <strong>tengo 18 años o más</strong>.</span>
+                <span>Mayor de 18 años.</span>
               </label>
-
-              <label className="flex items-start gap-2 cursor-pointer">
+              <label className="flex items-start gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
-                  required
                   checked={acceptedTerms}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  className="mt-0.5 accent-[#D4AF37]"
+                  className="mt-0.5 rounded border-white/20 text-[#E5B54F] focus:ring-0 bg-transparent"
                 />
-                <span>Acepto las <strong>Condiciones de Uso</strong> y el Aviso Legal.</span>
+                <span>Acepto condiciones de uso y aviso legal.</span>
               </label>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-[#D4AF37] text-[#0B0911] font-bold py-3 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-[1.02] active:scale-95 transition-all mt-2 disabled:opacity-50"
+              className="gold-gradient-btn w-full py-3.5 rounded-full text-xs font-bold tracking-wider uppercase flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
             >
-              {isLoading ? 'Registrando...' : 'Registrar y Acceder'}
+              <span>{isLoading ? 'Creando...' : 'Crear Cuenta'}</span>
+              <span className="text-sm">✦</span>
             </button>
           </form>
         )}

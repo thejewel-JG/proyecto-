@@ -5,14 +5,6 @@ import { CreateStoryModal } from './CreateStoryModal';
 import { StoryViewerModal } from './StoryViewerModal';
 import { StoryViewersModal } from './StoryViewersModal';
 import { CommentsDrawer } from './CommentsDrawer';
-import {
-  SacredFlameIcon,
-  CrystalBallIcon,
-  ArcanaGrimoireIcon,
-  ShootingStarIcon,
-  SolomonStarIcon,
-  AlchemicalSunIcon,
-} from './EsotericIcons';
 
 interface FeedViewProps {
   videos?: Video[];
@@ -30,6 +22,21 @@ interface FeedViewProps {
   onSelectHashtag?: (tag: string) => void;
 }
 
+const ZODIAC_CARDS = [
+  { sign: 'Aries', glyph: '♈', element: 'Fuego', message: 'La Luna activa tu liderazgo. Momento perfecto para dar el primer paso en proyectos audaces.' },
+  { sign: 'Tauro', glyph: '♉', element: 'Tierra', message: 'Venus bendice tus finanzas y estabilidad emocional. Confía en tu valor interior.' },
+  { sign: 'Géminis', glyph: '♊', element: 'Aire', message: 'Mercurio abre portales de comunicación clara. Una conversación reveladora transformará tu día.' },
+  { sign: 'Cáncer', glyph: '♋', element: 'Agua', message: 'Intuición en su punto más alto. Escucha los susurros de tus sueños y protege tu energía.' },
+  { sign: 'Leo', glyph: '♌', element: 'Fuego', message: 'El Sol ilumina tu carisma natural. Atrae abundancia y reconocimiento en tu entorno.' },
+  { sign: 'Virgo', glyph: '♍', element: 'Tierra', message: 'Orden y discernimiento espiritual. Encuentra armonía liberando cargas ajenas.' },
+  { sign: 'Libra', glyph: '♎', element: 'Aire', message: 'Equilibrio cósmico en tus relaciones. Nuevas alianzas traen paz y crecimiento.' },
+  { sign: 'Escorpio', glyph: '♏', element: 'Agua', message: 'Transformación profunda y renacimiento. Suelta lo viejo para recibir poder renovado.' },
+  { sign: 'Sagitario', glyph: '♐', element: 'Fuego', message: 'Expansión de horizontes y viajes astrales. La fortuna favorece a los optimistas.' },
+  { sign: 'Capricornio', glyph: '♑', element: 'Tierra', message: 'Construcción sólida de tus metas más elevadas. Tu esfuerzo rinde frutos duraderos.' },
+  { sign: 'Acuario', glyph: '♒', element: 'Aire', message: 'Innovación y destellos de genialidad intuitiva. Conecta con tu tribu de almas afines.' },
+  { sign: 'Piscis', glyph: '♓', element: 'Agua', message: 'Misticismo puro y conexión con los planos sutiles. La magia se manifiesta en cada detalle.' },
+];
+
 export const FeedView: React.FC<FeedViewProps> = ({
   currentUser,
   tarotistaProfiles,
@@ -41,27 +48,22 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onOpenWallet,
   onOpenAuthModal,
   onOpenCreatePost,
-  onSelectHashtag,
 }) => {
-  // Feed posts state with cursor pagination
-  const [posts, setPosts] = useState<Video[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  // Navigation Sub-tab
+  const [activeSubTab, setActiveSubTab] = useState<'inicio' | 'oraculos' | 'directos' | 'horoscopo' | 'explorar'>('inicio');
 
+  // Feed posts state
+  const [posts, setPosts] = useState<Video[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [carouselIndex, setCarouselIndex] = useState(0);
-  const [videoProgress, setVideoProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [mediaError, setMediaError] = useState<string | null>(null);
-  const [copyToast, setCopyToast] = useState(false);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [sendingShareToId, setSendingShareToId] = useState<string | null>(null);
-  const [heartAnim, setHeartAnim] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [favoritesMap, setFavoritesMap] = useState<Record<string, boolean>>({});
+
+  // Interactive Quick Modals
+  const [activeModal, setActiveModal] = useState<'carta_dia' | 'rituales' | 'compatibilidad' | 'tirada_express' | 'horoscopo' | null>(null);
+  const [selectedZodiac, setSelectedZodiac] = useState<typeof ZODIAC_CARDS[0] | null>(null);
+  const [cardRevealed, setCardRevealed] = useState(false);
+  const [expressCards, setExpressCards] = useState<{ past: string; present: string; future: string } | null>(null);
 
   // Stories state
   const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
@@ -69,83 +71,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const [showCreateStoryModal, setShowCreateStoryModal] = useState(false);
   const [viewersStoryId, setViewersStoryId] = useState<string | null>(null);
 
-  // Relationship state (Follow/Unfollow map)
-  const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
-
-  // Desbloqueo de publicaciones exclusivas (Fase 9)
+  // Desbloqueo
   const [confirmingUnlockPost, setConfirmingUnlockPost] = useState<Video | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
-  const [unlockError, setUnlockError] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const touchStartY = useRef<number>(0);
 
-  const handleInitiateUnlock = (post: Video) => {
-    if (!currentUser) {
-      onOpenAuthModal?.();
-      return;
-    }
-    const cost = post.priceCoins || 100;
-    if (currentUser.coinsBalance < cost) {
-      alert(`Saldo insuficiente. Tienes ${currentUser.coinsBalance} monedas y necesitas ${cost} monedas para desbloquear este contenido.`);
-      onOpenWallet();
-      return;
-    }
-    setUnlockError(null);
-    setConfirmingUnlockPost(post);
-  };
-
-  const handleConfirmUnlock = async () => {
-    if (!confirmingUnlockPost || !currentUser || isUnlocking) return;
-
-    setIsUnlocking(true);
-    setUnlockError(null);
-    const idempotencyKey = `unlock_${confirmingUnlockPost.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-    try {
-      const res = await fetch(`/api/posts/${encodeURIComponent(confirmingUnlockPost.id)}/unlock`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
-        },
-        body: JSON.stringify({ idempotencyKey }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Fallo al desbloquear la publicación.');
-      }
-
-      // Actualizar saldo de usuario en la UI
-      if (data.newBalance !== undefined) {
-        currentUser.coinsBalance = data.newBalance;
-      } else if (confirmingUnlockPost.priceCoins) {
-        currentUser.coinsBalance = Math.max(0, currentUser.coinsBalance - confirmingUnlockPost.priceCoins);
-      }
-
-      // Actualizar la publicación en el feed para mostrar el contenido completo
-      setPosts(prev => prev.map(p => {
-        if (p.id === confirmingUnlockPost.id) {
-          return {
-            ...p,
-            hasUnlocked: true,
-            videoUrl: data.mediaUrl || p.videoUrl,
-          };
-        }
-        return p;
-      }));
-
-      onUnlockVideo(confirmingUnlockPost.id);
-      setConfirmingUnlockPost(null);
-    } catch (err: any) {
-      setUnlockError(err.message || 'Error al procesar el desbloqueo.');
-    } finally {
-      setIsUnlocking(false);
-    }
-  };
-
-  // Cargar stories activas (24 horas)
+  // Cargar stories
   const fetchStories = useCallback(async () => {
     try {
       const res = await fetch('/api/stories');
@@ -154,1201 +86,644 @@ export const FeedView: React.FC<FeedViewProps> = ({
         setStoryGroups(data.groups || []);
       }
     } catch (e) {
-      console.error('Error al cargar stories:', e);
+      console.error(e);
+    }
+  }, []);
+
+  // Cargar publicaciones
+  const fetchPosts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/posts?limit=15');
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(data.items || []);
+      }
+    } catch (e) {
+      console.error(e);
     }
   }, []);
 
   useEffect(() => {
     fetchStories();
-  }, [fetchStories]);
+    fetchPosts();
+  }, [fetchStories, fetchPosts]);
 
-  // Cargar publicaciones con paginación por cursor y filtro real
-  const fetchPosts = useCallback(async (category: Category, cursor?: string, append = false) => {
-    if (append) {
-      setIsLoadingMore(true);
-    } else {
-      setIsLoading(true);
-      setFetchError(null);
+  const toggleFavorite = (tarId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavoritesMap(prev => ({ ...prev, [tarId]: !prev[tarId] }));
+  };
+
+  const handleInitiateUnlock = (post: Video) => {
+    if (!currentUser) {
+      onOpenAuthModal?.();
+      return;
     }
+    const cost = post.priceCoins || 100;
+    if (currentUser.coinsBalance < cost) {
+      alert(`Saldo insuficiente. Tienes ${currentUser.coinsBalance} monedas y necesitas ${cost} monedas.`);
+      onOpenWallet();
+      return;
+    }
+    setConfirmingUnlockPost(post);
+  };
 
+  const handleConfirmUnlock = async () => {
+    if (!confirmingUnlockPost || !currentUser || isUnlocking) return;
+    setIsUnlocking(true);
     try {
-      let url = `/api/posts?limit=10`;
-      if (category && category !== 'Para ti') {
-        url += `&category=${encodeURIComponent(category)}`;
-      }
-      if (cursor) {
-        url += `&cursor=${encodeURIComponent(cursor)}`;
-      }
-
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error('Error al conectar con el servidor.');
-      }
-
+      const res = await fetch(`/api/posts/${encodeURIComponent(confirmingUnlockPost.id)}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
       const data = await res.json();
-      const newItems: Video[] = data.items || [];
+      if (!res.ok) throw new Error(data.error);
 
-      if (append) {
-        setPosts(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const filtered = newItems.filter(item => !existingIds.has(item.id));
-          return [...prev, ...filtered];
-        });
-      } else {
-        setPosts(newItems);
-        setCurrentIndex(0);
+      if (data.newBalance !== undefined) {
+        currentUser.coinsBalance = data.newBalance;
       }
-
-      setNextCursor(data.nextCursor || null);
-      setHasMore(!!data.hasMore);
+      setPosts(prev => prev.map(p => p.id === confirmingUnlockPost.id ? { ...p, hasUnlocked: true } : p));
+      onUnlockVideo(confirmingUnlockPost.id);
+      setConfirmingUnlockPost(null);
     } catch (err: any) {
-      setFetchError(err.message || 'Fallo de conexión');
+      alert(err.message || 'Error al desbloquear');
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      setIsUnlocking(false);
     }
-  }, []);
+  };
 
-  // Cargar al montar o al cambiar de categoría
-  useEffect(() => {
-    fetchPosts(activeCategory);
-  }, [activeCategory, fetchPosts]);
-
-  const [directPostNotFound, setDirectPostNotFound] = useState<boolean>(false);
-
-  // Si se solicita un post específico por enlace directo
-  useEffect(() => {
-    if (!initialPostId) return;
-
-    let isMounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`/api/posts/${encodeURIComponent(initialPostId)}`);
-        if (!res.ok) {
-          if (isMounted) setDirectPostNotFound(true);
-          return;
-        }
-        const data = await res.json();
-        if (data.post && isMounted) {
-          setDirectPostNotFound(false);
-          setPosts(prev => {
-            const exists = prev.some(p => p.id === data.post.id);
-            if (exists) {
-              const idx = prev.findIndex(p => p.id === data.post.id);
-              setCurrentIndex(idx);
-              return prev;
-            }
-            setCurrentIndex(0);
-            return [data.post, ...prev];
-          });
-        } else if (isMounted) {
-          setDirectPostNotFound(true);
-        }
-      } catch (e) {
-        if (isMounted) setDirectPostNotFound(true);
-      }
-    })();
-
-    return () => { isMounted = false; };
-  }, [initialPostId]);
-
-  const currentVideo = posts[currentIndex];
-
-  // Comprobar estado de seguimiento para el creador actual
-  const checkRelationship = useCallback(async (targetUserId: string) => {
-    if (!currentUser || currentUser.id === targetUserId) return;
+  const handleToggleLike = async (postId: string) => {
+    if (!currentUser) {
+      onOpenAuthModal?.();
+      return;
+    }
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(targetUserId)}/relationship`);
-      if (res.ok) {
-        const data = await res.json();
-        setFollowingMap(prev => ({ ...prev, [targetUserId]: !!data.isFollowing }));
+      const res = await fetch(`/api/videos/${encodeURIComponent(postId)}/like`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes: data.likes, isLikedByCurrentUser: data.isLikedByCurrentUser } : p));
       }
     } catch (e) {
       console.error(e);
     }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (currentVideo?.tarotistaId) {
-      checkRelationship(currentVideo.tarotistaId);
-    }
-  }, [currentVideo?.tarotistaId, checkRelationship]);
-
-  // Control de reproducción de vídeo y reinicio de carrusel
-  useEffect(() => {
-    setMediaError(null);
-    setIsPlaying(true);
-    setCarouselIndex(0);
-    setVideoProgress(0);
-
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0;
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          setIsPlaying(false);
-        });
-      }
-    }
-
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.pause();
-      }
-    };
-  }, [currentIndex, currentVideo?.id]);
-
-  // Pausar al cambiar de pestaña del navegador
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden && videoRef.current) {
-        videoRef.current.pause();
-        setIsPlaying(false);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
-
-  const handleNextVideo = () => {
-    if (currentIndex < posts.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      if (currentIndex >= posts.length - 3 && hasMore && nextCursor && !isLoadingMore) {
-        fetchPosts(activeCategory, nextCursor, true);
-      }
-    } else if (hasMore && nextCursor && !isLoadingMore) {
-      fetchPosts(activeCategory, nextCursor, true).then(() => {
-        setCurrentIndex(prev => prev + 1);
-      });
-    }
   };
 
-  const handlePrevVideo = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-    }
-  };
+  // Featured Tarotistas (Ensure Luna Astral, El Caminante, Madame Sol appear with exact data)
+  const featuredOracles = [
+    {
+      id: 'tar_1',
+      userId: 'usr_tarotista_1',
+      name: 'Luna Astral',
+      specialty: 'Tarot · Astrología',
+      rating: '5.0',
+      reviews: 326,
+      priceEur: 1.50,
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+      online: true,
+    },
+    {
+      id: 'tar_2',
+      userId: 'usr_tarotista_2',
+      name: 'El Caminante',
+      specialty: 'Tarot · Runas',
+      rating: '4.9',
+      reviews: 212,
+      priceEur: 1.20,
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+      online: true,
+    },
+    {
+      id: 'tar_3',
+      userId: 'usr_tarotista_3',
+      name: 'Madame Sol',
+      specialty: 'Vidente · Numerología',
+      rating: '5.0',
+      reviews: 418,
+      priceEur: 1.80,
+      avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400',
+      online: true,
+    },
+  ];
 
-  // Gestos táctiles verticales en móvil
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartY.current = e.touches[0].clientY;
-  };
+  const currentVideo = posts[currentIndex] || null;
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const touchEndY = e.changedTouches[0].clientY;
-    const diff = touchStartY.current - touchEndY;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) {
-        handleNextVideo();
-      } else {
-        handlePrevVideo();
-      }
-    }
-  };
+  return (
+    <div className="space-y-6 max-w-xl mx-auto pb-16">
+      {/* 1. TOP HORIZONTAL CATEGORY PILLS */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1 pb-1">
+        {[
+          { id: 'inicio', label: 'Inicio', icon: 'home' },
+          { id: 'oraculos', label: 'Oráculos', icon: 'style' },
+          { id: 'directos', label: 'Directos', icon: 'sensors' },
+          { id: 'horoscopo', label: 'Horóscopo', icon: 'auto_awesome' },
+          { id: 'explorar', label: 'Explorar', icon: 'explore' },
+        ].map((tab) => {
+          const isActive = activeSubTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id as any)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                isActive
+                  ? 'bg-[#231338] text-[#F7E7C1] border border-[#E5B54F] shadow-[0_0_12px_rgba(229,181,79,0.35)] font-bold'
+                  : 'bg-[#140B22]/70 text-[#A09BAE] border border-white/5 hover:border-white/20 hover:text-[#F7E7C1]'
+              }`}
+            >
+              <span className={`material-symbols-outlined text-sm ${isActive ? 'text-[#E5B54F]' : 'text-[#A09BAE]'}`}>
+                {tab.icon}
+              </span>
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-  const togglePlayPause = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (currentVideo?.mediaType === 'image') return;
-    if (videoRef.current) {
-      if (videoRef.current.paused) {
-        videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
-      } else {
-        videoRef.current.pause();
-        setIsPlaying(false);
-      }
-    }
-  };
+      {/* 2. HERO BANNER: "Tu guía espiritual siempre contigo" */}
+      <div className="relative rounded-3xl overflow-hidden border border-[#E5B54F]/30 shadow-2xl group">
+        {/* Background Image: Celestial hands holding radiant cosmic orb with zodiac wheel */}
+        <div className="h-44 sm:h-52 w-full relative overflow-hidden bg-[#160B24]">
+          <img
+            src="https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&w=1200&q=80"
+            alt="Guía Espiritual"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 opacity-75"
+          />
+          {/* Celestial aura overlay */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0C0616]/95 via-[#0C0616]/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0C0616] via-transparent to-transparent" />
+        </div>
 
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
-    }
-  };
-
-  // Like persistente explícito con actualización optimista y rollback ante error
-  const handleToggleLike = async (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!currentUser) {
-      onOpenAuthModal?.();
-      return;
-    }
-    if (!currentVideo) return;
-
-    const previousLiked = !!currentVideo.isLikedByCurrentUser;
-    const previousLikes = currentVideo.likes;
-    const willBeLiked = !previousLiked;
-    const nextLikes = willBeLiked ? previousLikes + 1 : Math.max(0, previousLikes - 1);
-
-    // Actualización optimista
-    setPosts(prev => prev.map(p => p.id === currentVideo.id ? {
-      ...p,
-      isLikedByCurrentUser: willBeLiked,
-      likes: nextLikes,
-    } : p));
-
-    try {
-      const endpoint = `/api/posts/${encodeURIComponent(currentVideo.id)}/like`;
-      const res = await fetch(endpoint, {
-        method: willBeLiked ? 'POST' : 'DELETE',
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Fallo al procesar el Me gusta');
-      }
-
-      // Reconciliar con el contador real de la base de datos
-      setPosts(prev => prev.map(p => p.id === currentVideo.id ? {
-        ...p,
-        isLikedByCurrentUser: data.isLikedByCurrentUser,
-        likes: data.likes,
-      } : p));
-    } catch (err: any) {
-      // Revertir ante error
-      setPosts(prev => prev.map(p => p.id === currentVideo.id ? {
-        ...p,
-        isLikedByCurrentUser: previousLiked,
-        likes: previousLikes,
-      } : p));
-      alert(err.message || 'Error de conexión al dar Me gusta');
-    }
-  };
-
-  // Guardar / Quitar publicación de colección personal
-  const handleToggleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!currentUser) {
-      onOpenAuthModal?.();
-      return;
-    }
-    if (!currentVideo) return;
-
-    const previousSaved = !!currentVideo.isSavedByCurrentUser;
-    const willBeSaved = !previousSaved;
-
-    // Actualización optimista
-    setPosts(prev => prev.map(p => p.id === currentVideo.id ? {
-      ...p,
-      isSavedByCurrentUser: willBeSaved,
-    } : p));
-
-    try {
-      const endpoint = `/api/posts/${encodeURIComponent(currentVideo.id)}/save`;
-      const res = await fetch(endpoint, {
-        method: willBeSaved ? 'POST' : 'DELETE',
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Error al guardar publicación');
-      }
-    } catch (err: any) {
-      // Revertir
-      setPosts(prev => prev.map(p => p.id === currentVideo.id ? {
-        ...p,
-        isSavedByCurrentUser: previousSaved,
-      } : p));
-      alert(err.message || 'Error al actualizar guardados');
-    }
-  };
-
-  // Seguir / Dejar de seguir al creador de la publicación
-  const handleToggleFollow = async (e: React.MouseEvent, targetUserId: string) => {
-    e.stopPropagation();
-    if (!currentUser) {
-      onOpenAuthModal?.();
-      return;
-    }
-    const isCurrentlyFollowing = !!followingMap[targetUserId];
-    const willFollow = !isCurrentlyFollowing;
-
-    // Actualización optimista
-    setFollowingMap(prev => ({ ...prev, [targetUserId]: willFollow }));
-
-    try {
-      const endpoint = `/api/users/${encodeURIComponent(targetUserId)}/follow`;
-      const res = await fetch(endpoint, {
-        method: willFollow ? 'POST' : 'DELETE',
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Error al procesar seguimiento');
-      }
-      setFollowingMap(prev => ({ ...prev, [targetUserId]: !!data.isFollowing }));
-    } catch (err: any) {
-      setFollowingMap(prev => ({ ...prev, [targetUserId]: isCurrentlyFollowing }));
-      alert(err.message || 'Error de conexión');
-    }
-  };
-
-  const handleDoubleTap = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!currentVideo) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setHeartAnim({ x, y, id: Date.now() });
-    if (!currentVideo.isLikedByCurrentUser) {
-      handleToggleLike();
-    }
-
-    setTimeout(() => {
-      setHeartAnim(null);
-    }, 900);
-  };
-
-  const handleShare = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!currentVideo) return;
-    setShowShareModal(true);
-  };
-
-  const handleCopyShareLink = () => {
-    if (!currentVideo) return;
-    const shareUrl = `${window.location.origin}/?post=${currentVideo.id}`;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        setCopyToast(true);
-        setShowShareModal(false);
-        setTimeout(() => setCopyToast(false), 2500);
-      });
-    } else {
-      prompt('Copia el enlace de esta publicación:', shareUrl);
-    }
-  };
-
-  const handleSendPostViaDm = async (targetUserId: string) => {
-    if (!currentUser) {
-      setShowShareModal(false);
-      onOpenAuthModal?.();
-      return;
-    }
-    if (!currentVideo || sendingShareToId) return;
-    setSendingShareToId(targetUserId);
-    try {
-      const convRes = await fetch('/api/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUserId }),
-      });
-      if (!convRes.ok) throw new Error('Error al abrir conversación');
-      const convData = await convRes.json();
-      const convId = convData.conversation?.id;
-      if (!convId) throw new Error('Conversación inválida');
-
-      const shareUrl = `${window.location.origin}/?post=${currentVideo.id}`;
-      const msgContent = `🔮 Te comparto esta visión de @${currentVideo.tarotistaName}: "${currentVideo.title}"\n${shareUrl}`;
-      await fetch(`/api/conversations/${encodeURIComponent(convId)}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: msgContent,
-          clientMessageId: `share_post_${Date.now()}`,
-        }),
-      });
-
-      setShowShareModal(false);
-      setCopyToast(true);
-      setTimeout(() => setCopyToast(false), 2500);
-    } catch {
-      alert('No se pudo compartir la visión por mensaje directo.');
-    } finally {
-      setSendingShareToId(null);
-    }
-  };
-
-  const handleScrubVideo = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    if (!videoRef.current || !videoRef.current.duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const pct = clickX / rect.width;
-    videoRef.current.currentTime = pct * videoRef.current.duration;
-    setVideoProgress(pct * 100);
-  };
-
-  const renderTextWithHashtags = (text: string) => {
-    const parts = text.split(/(#[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9_]+)/g);
-    return parts.map((part, idx) => {
-      if (part.startsWith('#')) {
-        return (
-          <span
-            key={idx}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectHashtag?.(part);
-            }}
-            className="text-[#D4AF37] font-bold hover:underline cursor-pointer"
-          >
-            {part}
-          </span>
-        );
-      }
-      return <React.Fragment key={idx}>{part}</React.Fragment>;
-    });
-  };
-
-  // 0. Estado de Publicación no encontrada o retirada (Enlace Directo)
-  if (directPostNotFound) {
-    return (
-      <div className="relative w-full h-[calc(100vh-140px)] max-w-md mx-auto bg-[#0B0911] rounded-3xl shadow-2xl border border-[#D4AF37]/30 flex items-center justify-center p-8 text-center">
-        <div className="flex flex-col items-center gap-4 max-w-xs">
-          <div className="w-16 h-16 rounded-full bg-[#1A1026] border border-[#D4AF37]/40 flex items-center justify-center">
-            <span className="material-symbols-outlined text-3xl text-[#D4AF37]">visibility_off</span>
+        {/* Content on Banner */}
+        <div className="absolute inset-0 p-5 sm:p-6 flex flex-col justify-between z-10">
+          <div className="space-y-1 max-w-[280px] sm:max-w-xs">
+            <h2 className="font-cinzel text-xl sm:text-2xl font-bold text-[#F7E7C1] leading-tight text-gold-glow">
+              Tu guía espiritual siempre contigo
+            </h2>
+            <p className="text-[11px] sm:text-xs text-[#D8CEF0]/90">
+              Tarot · Astrología · Rituales · Predicciones
+            </p>
           </div>
-          <h3 className="font-cinzel text-lg font-bold text-[#F7E7C1]">Publicación no disponible</h3>
-          <p className="text-xs text-[#A7A7A7] leading-relaxed">
-            Esta publicación ha sido retirada por su autor o el enlace directo ya no existe en KABALY.
-          </p>
+
+          <div className="flex items-center justify-between pt-2">
+            <button
+              onClick={() => setActiveSubTab('oraculos')}
+              className="gold-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md hover:scale-105 transition-all"
+            >
+              <span>Explorar oráculos</span>
+              <span className="text-sm">→</span>
+            </button>
+
+            {/* Carousel Dots */}
+            <div className="flex items-center gap-1.5 pr-2">
+              <span className="w-2 h-2 rounded-full bg-[#E5B54F] shadow-[0_0_6px_#E5B54F]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. SECTION: "Oráculos destacados" (Ver todos →) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-cinzel text-sm sm:text-base font-bold text-[#F7E7C1] tracking-wide">
+            Oráculos destacados
+          </h3>
           <button
+            onClick={() => setActiveSubTab('oraculos')}
+            className="text-xs text-[#E5B54F] hover:text-[#F7E7C1] font-semibold flex items-center gap-1 transition-colors"
+          >
+            <span>Ver todos</span>
+            <span className="text-sm">→</span>
+          </button>
+        </div>
+
+        {/* Horizontal Carousel of Tarotista Cards */}
+        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
+          {featuredOracles.map((tar) => (
+            <div
+              key={tar.id}
+              onClick={() => onViewTarotistaProfile(tar.userId)}
+              className="w-40 sm:w-44 shrink-0 bg-[#160B24] border border-[#E5B54F]/25 hover:border-[#E5B54F] rounded-2xl p-2.5 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 shadow-lg cursor-pointer group"
+            >
+              {/* Photo with heart favorite button on top right */}
+              <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-2 bg-[#120B1D]">
+                <img
+                  src={tar.avatar}
+                  alt={tar.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                {/* Heart Favorite Button */}
+                <button
+                  onClick={(e) => toggleFavorite(tar.id, e)}
+                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm border border-white/15 flex items-center justify-center text-white hover:text-red-400 transition-colors"
+                >
+                  <span className={`text-xs ${favoritesMap[tar.id] ? 'text-red-500 font-bold' : ''}`}>
+                    {favoritesMap[tar.id] ? '♥' : '♡'}
+                  </span>
+                </button>
+
+                {/* Online Indicator Badge */}
+                <span className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm border border-emerald-500/40 text-emerald-400 text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>En línea</span>
+                </span>
+              </div>
+
+              {/* Tarotista Info */}
+              <div className="space-y-1">
+                <div className="flex items-center gap-1 text-[11px] text-[#E5B54F] font-semibold">
+                  <span>★</span>
+                  <span className="text-[#F7E7C1] font-bold">{tar.rating}</span>
+                  <span className="text-[#A09BAE] text-[10px]">({tar.reviews})</span>
+                </div>
+                <h4 className="font-cinzel text-xs font-bold text-[#F7E7C1] truncate">
+                  {tar.name}
+                </h4>
+                <p className="text-[10px] text-[#A09BAE] truncate">
+                  {tar.specialty}
+                </p>
+
+                {/* Golden Price CTA button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBookConsultation(tar.id);
+                  }}
+                  className="w-full mt-1.5 py-1.5 rounded-full bg-[#E5B54F]/15 border border-[#E5B54F]/40 hover:bg-[#E5B54F] text-[#E5B54F] hover:text-[#120B1D] text-[10px] font-bold transition-all"
+                >
+                  Desde {tar.priceEur.toFixed(2)} €/min
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 4. SECTION: MYSTIC QUICK ACTIONS (Grid 4) */}
+      <div className="grid grid-cols-4 gap-2.5">
+        {[
+          { id: 'carta_dia', label: 'Carta del día', icon: 'style' },
+          { id: 'rituales', label: 'Rituales', icon: 'local_fire_department' },
+          { id: 'compatibilidad', label: 'Compatibilidad', icon: 'favorite' },
+          { id: 'tirada_express', label: 'Tirada express', icon: 'view_carousel' },
+        ].map((item) => (
+          <button
+            key={item.id}
             onClick={() => {
-              window.history.replaceState({}, '', window.location.pathname);
-              setDirectPostNotFound(false);
-              fetchPosts(activeCategory);
+              if (item.id === 'tirada_express') {
+                setExpressCards({
+                  past: 'II · La Sacerdotisa (Sabiduría Oculta)',
+                  present: 'X · La Rueda de la Fortuna (Giro del Destino)',
+                  future: 'XVII · La Estrella (Iluminación & Esperanza)'
+                });
+              }
+              setActiveModal(item.id as any);
             }}
-            className="bg-[#D4AF37] text-[#0B0911] px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-wider hover:scale-105 transition-all"
+            className="flex flex-col items-center justify-center p-3 rounded-2xl bg-[#160B24] border border-[#E5B54F]/25 hover:border-[#E5B54F] hover:bg-[#201032] transition-all duration-200 group shadow-md"
           >
-            Ir al Feed General
+            <div className="w-9 h-9 rounded-full bg-[#24133A] border border-[#E5B54F]/30 flex items-center justify-center text-[#E5B54F] group-hover:scale-110 transition-transform mb-1.5 shadow-sm">
+              <span className="material-symbols-outlined text-lg">{item.icon}</span>
+            </div>
+            <span className="text-[10px] font-medium text-[#F7E7C1]/90 text-center leading-tight">
+              {item.label}
+            </span>
           </button>
-        </div>
+        ))}
       </div>
-    );
-  }
 
-  // 1. Estado de Carga Inicial
-  if (isLoading) {
-    return (
-      <div className="relative w-full h-[calc(100vh-140px)] max-w-md mx-auto bg-[#0B0911] rounded-3xl shadow-2xl border border-[#D4AF37]/20 flex items-center justify-center p-6 text-center">
-        <div className="flex flex-col items-center gap-3">
-          <span className="material-symbols-outlined text-4xl text-[#D4AF37] animate-spin">auto_awesome</span>
-          <p className="text-sm text-[#F7E7C1] font-cinzel">Sincronizando con el cosmos...</p>
-          <span className="text-[11px] text-[#A7A7A7]">Cargando publicaciones reales de KABALY</span>
-        </div>
-      </div>
-    );
-  }
-
-  // 2. Estado de Fallo de Conexión
-  if (fetchError) {
-    return (
-      <div className="relative w-full h-[calc(100vh-140px)] max-w-md mx-auto bg-[#0B0911] rounded-3xl shadow-2xl border border-red-500/30 flex items-center justify-center p-6 text-center">
-        <div className="flex flex-col items-center gap-3 max-w-xs">
-          <span className="material-symbols-outlined text-4xl text-red-400">cloud_off</span>
-          <h3 className="text-base text-[#F7E7C1] font-cinzel font-bold">Error de Conexión</h3>
-          <p className="text-xs text-[#A7A7A7]">{fetchError}</p>
+      {/* 5. SECTION: "Tu horóscopo de hoy" (Ver todos →) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-cinzel text-sm sm:text-base font-bold text-[#F7E7C1] tracking-wide">
+            Tu horóscopo de hoy
+          </h3>
           <button
-            onClick={() => fetchPosts(activeCategory)}
-            className="mt-2 bg-[#5A2D82] text-[#D4AF37] border border-[#D4AF37] px-5 py-2 rounded-full text-xs font-bold hover:brightness-110 transition-all"
+            onClick={() => setActiveSubTab('horoscopo')}
+            className="text-xs text-[#E5B54F] hover:text-[#F7E7C1] font-semibold flex items-center gap-1 transition-colors"
           >
-            Reintentar
+            <span>Ver todos</span>
+            <span className="text-sm">→</span>
           </button>
         </div>
-      </div>
-    );
-  }
 
-  // 3. Estado Vacío (Sin Publicaciones en la categoría)
-  if (!currentVideo || posts.length === 0) {
-    return (
-      <div className="w-full max-w-md mx-auto flex flex-col gap-2">
-        {/* Stories Bar en cabecera */}
+        {/* Horizontal Zodiac Sign Cards */}
+        <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
+          {ZODIAC_CARDS.map((z) => (
+            <button
+              key={z.sign}
+              onClick={() => {
+                setSelectedZodiac(z);
+                setActiveModal('horoscopo');
+              }}
+              className="w-20 sm:w-24 shrink-0 flex flex-col items-center justify-center p-3 rounded-2xl bg-[#160B24] border border-[#E5B54F]/25 hover:border-[#E5B54F] hover:bg-[#241438] transition-all group shadow-sm"
+            >
+              <span className="text-2xl text-[#E5B54F] group-hover:scale-125 transition-transform duration-300">
+                {z.glyph}
+              </span>
+              <span className="text-xs font-semibold text-[#F7E7C1] mt-1">
+                {z.sign}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 6. COMMUNITY FEED: StoriesBar + Community Posts */}
+      <div className="pt-2 space-y-4">
+        {/* Stories Bar */}
         <StoriesBar
           storyGroups={storyGroups}
           currentUser={currentUser}
-          tarotistaProfiles={tarotistaProfiles}
-          onOpenCreateStory={() => {
-            if (!currentUser) onOpenAuthModal?.();
-            else setShowCreateStoryModal(true);
+          onSelectGroup={(g) => setSelectedStoryGroup(g)}
+          onCreateStory={() => {
+            if (!currentUser) {
+              onOpenAuthModal?.();
+              return;
+            }
+            setShowCreateStoryModal(true);
           }}
-          onSelectStoryGroup={(group) => setSelectedStoryGroup(group)}
-          onSelectProfile={(userId) => onViewTarotistaProfile(userId)}
         />
 
-        <div className="relative w-full h-[calc(100vh-210px)] bg-[#0B0911] rounded-3xl shadow-2xl border border-[#D4AF37]/20 flex items-center justify-center p-8 text-center">
-          <div className="flex flex-col items-center gap-4 max-w-xs">
-            <div className="w-16 h-16 rounded-full bg-[#1A1026] border border-[#D4AF37]/40 flex items-center justify-center gold-glow">
-              <span className="material-symbols-outlined text-3xl text-[#D4AF37]">auto_awesome_motion</span>
+        {/* Publications Stream */}
+        <div className="space-y-4">
+          <h3 className="font-cinzel text-sm font-bold text-[#E5B54F] uppercase tracking-wider flex items-center gap-2">
+            <span>✦</span>
+            <span>Visiones & Transmisiones de la Comunidad</span>
+          </h3>
+
+          {posts.map((post) => (
+            <div
+              key={post.id}
+              className="rounded-3xl overflow-hidden bg-[#140B22] border border-[#E5B54F]/20 shadow-xl space-y-3 p-4"
+            >
+              {/* Post Author Header */}
+              <div className="flex items-center justify-between">
+                <div
+                  onClick={() => onViewTarotistaProfile(post.tarotistaId)}
+                  className="flex items-center gap-2.5 cursor-pointer group"
+                >
+                  <div className="w-10 h-10 rounded-full story-ring p-[2px]">
+                    <img
+                      src={post.tarotistaAvatar}
+                      alt={post.tarotistaName}
+                      className="w-full h-full rounded-full object-cover bg-[#0B0911]"
+                    />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-[#F7E7C1] group-hover:text-[#E5B54F] transition-colors flex items-center gap-1">
+                      <span>{post.tarotistaName}</span>
+                      {post.isVerified && (
+                        <span className="material-symbols-outlined text-[14px] text-[#E5B54F] filled">verified</span>
+                      )}
+                    </h4>
+                    <span className="text-[10px] text-[#A09BAE]">✦ {post.category}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => onViewTarotistaProfile(post.tarotistaId)}
+                  className="text-[11px] text-[#E5B54F] border border-[#E5B54F]/40 hover:bg-[#E5B54F] hover:text-[#120B1D] font-bold px-3 py-1 rounded-full transition-all"
+                >
+                  Consultar
+                </button>
+              </div>
+
+              {/* Media Container */}
+              <div className="relative aspect-[9/12] w-full rounded-2xl overflow-hidden bg-black border border-white/5">
+                {post.mediaType === 'video' ? (
+                  <video
+                    src={post.videoUrl}
+                    poster={post.thumbnailUrl}
+                    controls
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <img
+                    src={post.thumbnailUrl || post.videoUrl}
+                    alt={post.title}
+                    className="w-full h-full object-cover"
+                  />
+                )}
+              </div>
+
+              {/* Post Caption & Actions */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleToggleLike(post.id)}
+                      className={`flex items-center gap-1 text-xs font-bold transition-transform active:scale-90 ${
+                        post.isLikedByCurrentUser ? 'text-red-400' : 'text-[#F7E7C1] hover:text-[#E5B54F]'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-lg">
+                        {post.isLikedByCurrentUser ? 'favorite' : 'favorite_border'}
+                      </span>
+                      <span>{post.likes}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowCommentsModal(true)}
+                      className="flex items-center gap-1 text-xs font-semibold text-[#F7E7C1] hover:text-[#E5B54F]"
+                    >
+                      <span className="material-symbols-outlined text-lg">chat_bubble_outline</span>
+                      <span>{post.commentsCount}</span>
+                    </button>
+                  </div>
+
+                  {post.isExclusive && !post.hasUnlocked && (
+                    <button
+                      onClick={() => handleInitiateUnlock(post)}
+                      className="gold-gradient-btn px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1"
+                    >
+                      <span>Desbloquear Arcano ({post.priceCoins || 100} 🪙)</span>
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-xs text-[#D8CEF0] leading-relaxed">
+                  <strong className="text-[#F7E7C1] mr-1.5">{post.title}:</strong>
+                  {post.description || 'Canalización de luz y guía para este ciclo estelar.'}
+                </p>
+              </div>
             </div>
-            <h3 className="font-cinzel text-lg font-bold text-[#F7E7C1]">
-              {activeCategory === 'Siguiendo' ? 'Aún no sigues a nadie' : `No hay publicaciones en ${activeCategory}`}
-            </h3>
-            <p className="text-xs text-[#A7A7A7] leading-relaxed">
-              {activeCategory === 'Siguiendo'
-                ? 'Explora las categorías para descubrir tarotistas y creadores que resuenen contigo y síguelos para ver aquí sus publicaciones.'
-                : 'El cosmos aún no registra revelaciones en esta categoría. ¡Sé el primero en compartir tu luz!'}
-            </p>
-            {onOpenCreatePost && currentUser && (
-              <button
-                onClick={onOpenCreatePost}
-                className="bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold px-6 py-2.5 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-105 transition-all"
-              >
-                + Publicar Ahora
-              </button>
-            )}
+          ))}
+        </div>
+      </div>
+
+      {/* ==================== INTERACTIVE MODALS ==================== */}
+
+      {/* MODAL 1: CARTA DEL DÍA */}
+      {activeModal === 'carta_dia' && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="mystic-card rounded-3xl p-6 max-w-sm w-full border border-[#E5B54F]/40 text-center space-y-4">
+            <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">Carta Astral del Día</h3>
+            <div
+              onClick={() => setCardRevealed(true)}
+              className="aspect-[2/3] w-48 mx-auto rounded-2xl bg-gradient-to-tr from-[#1E1032] via-[#2A1448] to-[#140A24] border-2 border-[#E5B54F] p-4 flex flex-col items-center justify-center cursor-pointer shadow-[0_0_25px_rgba(229,181,79,0.3)] transition-transform hover:scale-105"
+            >
+              {cardRevealed ? (
+                <div className="space-y-2 animate-fade-in">
+                  <span className="text-4xl text-[#E5B54F]">🎴</span>
+                  <h4 className="font-cinzel text-sm font-bold text-[#F7E7C1]">XVII · La Estrella</h4>
+                  <p className="text-[11px] text-[#D8CEF0] leading-relaxed">
+                    Renovación espiritual, serenidad y confianza en el destino. Todo lo que intencionas hoy florecerá en armonía.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <span className="text-3xl text-[#E5B54F] animate-pulse">✦</span>
+                  <p className="text-xs text-[#E5B54F] font-bold uppercase tracking-wider">
+                    Toca para Revelar tu Arcano
+                  </p>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => { setActiveModal(null); setCardRevealed(false); }}
+              className="gold-gradient-btn w-full py-2.5 rounded-full text-xs font-bold"
+            >
+              Cerrar Templo
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Modales de Stories */}
+      {/* MODAL 2: RITUALES */}
+      {activeModal === 'rituales' && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="mystic-card rounded-3xl p-6 max-w-sm w-full border border-[#E5B54F]/40 space-y-3">
+            <div className="text-center">
+              <span className="material-symbols-outlined text-3xl text-[#E5B54F]">local_fire_department</span>
+              <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">Ritual de Purificación de Hoy</h3>
+            </div>
+            <div className="space-y-2 text-xs text-[#D8CEF0] leading-relaxed bg-[#160B24] p-3.5 rounded-2xl border border-white/5">
+              <p><strong>1. Vela Blanca:</strong> Enciende una vela consagrada al arcángel Miguel para disolver ataduras.</p>
+              <p><strong>2. Salvia o Palo Santo:</strong> Ahuma las cuatro esquinas de tu hogar en sentido horario.</p>
+              <p><strong>3. Decreto Sagrado:</strong> "Que la luz divina habite en mí y disuelva toda discordia. Así es, hecho está."</p>
+            </div>
+            <button
+              onClick={() => setActiveModal(null)}
+              className="gold-gradient-btn w-full py-2.5 rounded-full text-xs font-bold"
+            >
+              Entendido ✦
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: COMPATIBILIDAD */}
+      {activeModal === 'compatibilidad' && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="mystic-card rounded-3xl p-6 max-w-sm w-full border border-[#E5B54F]/40 space-y-3 text-center">
+            <span className="material-symbols-outlined text-3xl text-[#E5B54F]">favorite</span>
+            <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">Sinastría Elemental</h3>
+            <p className="text-xs text-[#A09BAE]">
+              La afinidad astrológica se activa automáticamente con los perfiles de oráculos y buscadores según sus signos solares y ascendentes.
+            </p>
+            <div className="p-3 bg-[#160B24] rounded-2xl border border-[#E5B54F]/25 text-xs text-[#E5B54F] font-semibold">
+              ✦ Tu afinidad cósmica con Luna Astral es del 96% (Fuego + Aire).
+            </div>
+            <button
+              onClick={() => setActiveModal(null)}
+              className="gold-gradient-btn w-full py-2.5 rounded-full text-xs font-bold"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: TIRADA EXPRESS */}
+      {activeModal === 'tirada_express' && expressCards && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="mystic-card rounded-3xl p-6 max-w-md w-full border border-[#E5B54F]/40 space-y-3.5 text-center">
+            <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">Tirada Express (3 Cartas)</h3>
+            <div className="grid grid-cols-3 gap-2 text-left">
+              <div className="p-2.5 rounded-xl bg-[#160B24] border border-white/10 space-y-1">
+                <span className="text-[10px] text-[#E5B54F] uppercase font-bold">Pasado</span>
+                <p className="text-xs font-bold text-[#F7E7C1]">{expressCards.past}</p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#160B24] border border-[#E5B54F]/40 space-y-1">
+                <span className="text-[10px] text-[#E5B54F] uppercase font-bold">Presente</span>
+                <p className="text-xs font-bold text-[#F7E7C1]">{expressCards.present}</p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#160B24] border border-white/10 space-y-1">
+                <span className="text-[10px] text-[#E5B54F] uppercase font-bold">Futuro</span>
+                <p className="text-xs font-bold text-[#F7E7C1]">{expressCards.future}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveModal(null)}
+              className="gold-gradient-btn w-full py-2.5 rounded-full text-xs font-bold"
+            >
+              Aceptar Mensaje Sagrado
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: HORÓSCOPO DEL SIGNO SELECCIONADO */}
+      {activeModal === 'horoscopo' && selectedZodiac && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="mystic-card rounded-3xl p-6 max-w-sm w-full border border-[#E5B54F]/40 space-y-3 text-center">
+            <span className="text-4xl text-[#E5B54F]">{selectedZodiac.glyph}</span>
+            <h3 className="font-cinzel text-lg font-bold text-[#F7E7C1]">
+              Horóscopo para {selectedZodiac.sign}
+            </h3>
+            <span className="text-[10px] text-[#E5B54F] font-bold uppercase tracking-wider block">
+              Elemento {selectedZodiac.element}
+            </span>
+            <p className="text-xs text-[#D8CEF0] leading-relaxed bg-[#160B24] p-3.5 rounded-2xl border border-white/10">
+              "{selectedZodiac.message}"
+            </p>
+            <button
+              onClick={() => setActiveModal(null)}
+              className="gold-gradient-btn w-full py-2.5 rounded-full text-xs font-bold"
+            >
+              Sintonizar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Comments Drawer */}
+      {showCommentsModal && currentVideo && (
+        <CommentsDrawer
+          isOpen={showCommentsModal}
+          onClose={() => setShowCommentsModal(false)}
+          videoId={currentVideo.id}
+          currentUser={currentUser}
+          onOpenAuthModal={onOpenAuthModal}
+        />
+      )}
+
+      {/* Story Viewer Modal */}
+      {selectedStoryGroup && (
+        <StoryViewerModal
+          storyGroup={selectedStoryGroup}
+          currentUser={currentUser}
+          onClose={() => setSelectedStoryGroup(null)}
+          onViewProfile={(userId) => {
+            setSelectedStoryGroup(null);
+            onViewTarotistaProfile(userId);
+          }}
+          onOpenAuthModal={onOpenAuthModal}
+        />
+      )}
+
+      {/* Create Story Modal */}
+      {showCreateStoryModal && (
         <CreateStoryModal
           isOpen={showCreateStoryModal}
+          currentUser={currentUser}
           onClose={() => setShowCreateStoryModal(false)}
-          onStoryCreated={() => {
+          onCreated={() => {
             setShowCreateStoryModal(false);
             fetchStories();
           }}
         />
-
-        <StoryViewerModal
-          isOpen={!!selectedStoryGroup}
-          storyGroup={selectedStoryGroup}
-          currentUser={currentUser}
-          onClose={() => setSelectedStoryGroup(null)}
-          onStoryDeleted={() => {
-            setSelectedStoryGroup(null);
-            fetchStories();
-          }}
-          onViewersRequested={(storyId) => setViewersStoryId(storyId)}
-          onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
-        />
-
-        <StoryViewersModal
-          isOpen={!!viewersStoryId}
-          storyId={viewersStoryId || ''}
-          onClose={() => setViewersStoryId(null)}
-        />
-      </div>
-    );
-  }
-
-  const isUnlocked = currentVideo.hasUnlocked ?? (!currentVideo.isPremium && !currentVideo.isExclusive);
-  const profile = tarotistaProfiles.find(p => p.userId === currentVideo?.tarotistaId || p.id === currentVideo?.tarotistaId);
-  const isFollowingAuthor = !!followingMap[currentVideo.tarotistaId];
-
-  return (
-    <div className="w-full max-w-md mx-auto flex flex-col gap-1.5">
-      {/* 1. Barra de Auras / Stories Activas de 24 Horas (Estilo Instagram Esotérico) */}
-      <StoriesBar
-        storyGroups={storyGroups}
-        currentUser={currentUser}
-        tarotistaProfiles={tarotistaProfiles}
-        onOpenCreateStory={() => {
-          if (!currentUser) onOpenAuthModal?.();
-          else setShowCreateStoryModal(true);
-        }}
-        onSelectStoryGroup={(group) => setSelectedStoryGroup(group)}
-        onSelectProfile={(userId) => onViewTarotistaProfile(userId)}
-      />
-
-      {/* 2. Canvas Inmersivo Estilo TikTok / Reels con Iconografía Esotérica */}
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className="relative w-full h-[calc(100vh-190px)] min-h-[510px] bg-[#0B0911] overflow-hidden rounded-2xl shadow-2xl border border-white/10 flex flex-col justify-between select-none"
-      >
-        {/* Toast de enlace copiado */}
-        {copyToast && (
-          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-[#1A1026]/95 backdrop-blur-xl border border-[#D4AF37] text-[#D4AF37] px-4 py-2 rounded-full text-xs font-bold shadow-2xl flex items-center gap-2 gold-glow animate-in fade-in zoom-in duration-200">
-            <span>✦</span>
-            <span>Vínculo astral copiado al portapapeles</span>
-          </div>
-        )}
-
-        {/* Canvas Multimedia */}
-        <div
-          className="relative w-full h-full cursor-pointer flex items-center justify-center bg-black overflow-hidden"
-          onClick={handleDoubleTap}
-        >
-          {/* REQUISITO FASE 9: Si no está desbloqueado, NO renderizar el archivo privado original. */}
-          {!isUnlocked ? (
-            <div className="relative w-full h-full flex items-center justify-center bg-[#0B0911]">
-              <img
-                src={currentVideo.thumbnailUrl || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800'}
-                alt={currentVideo.title}
-                className="w-full h-full object-cover opacity-35"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0B0911] via-[#0B0911]/80 to-transparent" />
-            </div>
-          ) : currentVideo.mediaType === 'image' ? (
-            currentVideo.mediaUrls && currentVideo.mediaUrls.length > 1 ? (
-              <div className="relative w-full h-full flex items-center justify-center">
-                <img
-                  key={`${currentVideo.id}_${carouselIndex}`}
-                  src={currentVideo.mediaUrls[carouselIndex] || currentVideo.videoUrl}
-                  alt={currentVideo.title}
-                  className="w-full h-full object-cover transition-all duration-300"
-                />
-                {/* Controles de Carrusel de Cartas */}
-                {carouselIndex > 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCarouselIndex(prev => Math.max(0, prev - 1));
-                    }}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/60 border border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:scale-110 transition-transform"
-                  >
-                    ‹
-                  </button>
-                )}
-                {carouselIndex < currentVideo.mediaUrls.length - 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCarouselIndex(prev => Math.min((currentVideo.mediaUrls?.length || 1) - 1, prev + 1));
-                    }}
-                    className="absolute right-16 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/60 border border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:scale-110 transition-transform"
-                  >
-                    ›
-                  </button>
-                )}
-                {/* Indicadores de página del carrusel */}
-                <div className="absolute top-14 right-3 z-30 bg-black/60 backdrop-blur-md border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                  🎴 {carouselIndex + 1}/{currentVideo.mediaUrls.length}
-                </div>
-                <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-black/40 px-2.5 py-1 rounded-full">
-                  {currentVideo.mediaUrls.map((_, idx) => (
-                    <span
-                      key={idx}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCarouselIndex(idx);
-                      }}
-                      className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                        idx === carouselIndex ? 'w-4 bg-[#D4AF37]' : 'w-1.5 bg-white/40'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <img
-                key={currentVideo.id}
-                src={currentVideo.videoUrl}
-                alt={currentVideo.title}
-                className="w-full h-full object-cover transition-all duration-300"
-              />
-            )
-          ) : (
-            <video
-              ref={videoRef}
-              key={currentVideo.id}
-              src={currentVideo.videoUrl}
-              poster={currentVideo.thumbnailUrl}
-              autoPlay
-              loop
-              muted={isMuted}
-              playsInline
-              preload="metadata"
-              onTimeUpdate={() => {
-                if (videoRef.current && videoRef.current.duration) {
-                  setVideoProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
-                }
-              }}
-              onError={() => {
-                setMediaError('Este formato no puede reproducirse en este dispositivo. Formatos admitidos: MP4 H.264, WebM.');
-              }}
-              className="w-full h-full object-cover transition-all duration-300"
-            />
-          )}
-
-          {/* Mensaje de Error Multimedia si no se reproduce */}
-          {mediaError && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center bg-[#0B0911]/90 backdrop-blur-md">
-              <span className="material-symbols-outlined text-4xl text-amber-400 mb-2">warning</span>
-              <p className="text-xs text-[#F7E7C1] max-w-xs">{mediaError}</p>
-            </div>
-          )}
-
-          {/* Gradiente de overlay limpio */}
-          <div className="absolute inset-0 video-overlay-gradient pointer-events-none" />
-
-          {/* Doble toque: Destello de Estrella Alquímica Dorada (Reemplaza al corazón típico) */}
-          {heartAnim && (
-            <div
-              className="absolute pointer-events-none z-30 animate-ping text-[#D4AF37] esoteric-glow"
-              style={{ left: heartAnim.x - 32, top: heartAnim.y - 32 }}
-            >
-              <SolomonStarIcon className="w-16 h-16" />
-            </div>
-          )}
-
-          {/* Botón Play/Pause sobre el video */}
-          {isUnlocked && currentVideo.mediaType === 'video' && !isPlaying && !mediaError && (
-            <button
-              onClick={togglePlayPause}
-              className="absolute z-20 w-16 h-16 rounded-full bg-[#0B0911]/55 backdrop-blur-md border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] hover:scale-110 transition-transform"
-            >
-              <span className="material-symbols-outlined text-3xl">play_arrow</span>
-            </button>
-          )}
-
-          {/* Contenido Exclusivo Bloqueado: CTA de Desbloqueo Real */}
-          {!isUnlocked && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center bg-[#0B0911]/85 backdrop-blur-md">
-              <div className="w-16 h-16 rounded-full story-ring p-0.5 mb-3 gold-glow">
-                <div className="w-full h-full bg-[#1A1026] rounded-full flex items-center justify-center text-[#D4AF37]">
-                  <ArcanaGrimoireIcon className="w-8 h-8" filled />
-                </div>
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] mb-1">
-                Arcano Exclusivo Celestial
-              </span>
-              <h3 className="font-cinzel text-lg text-[#F7E7C1] font-semibold mb-2 max-w-xs">
-                {currentVideo.title}
-              </h3>
-              <p className="text-xs text-[#A7A7A7] max-w-xs mb-4 line-clamp-2">
-                {currentVideo.description || 'Contenido reservado para iniciados y seguidores devotos.'}
-              </p>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleInitiateUnlock(currentVideo);
-                }}
-                className="bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold px-6 py-3 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
-              >
-                <SolomonStarIcon className="w-4 h-4" />
-                <span>Desbloquear por {currentVideo.priceCoins || 100} Monedas</span>
-              </button>
-            </div>
-          )}
-
-          {/* Controles Superiores Flotantes Minimalistas (Navegación y Sonido) */}
-          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
-            <div className="flex items-center gap-1.5 pointer-events-auto">
-              <div className="flex items-center gap-1 bg-black/35 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handlePrevVideo(); }}
-                  disabled={currentIndex === 0}
-                  className="hover:text-[#D4AF37] transition-colors disabled:opacity-30"
-                  title="Visión anterior"
-                >
-                  <span className="material-symbols-outlined text-xs">expand_less</span>
-                </button>
-                <span className="text-[10px] text-[#F7E7C1]/80 font-semibold">
-                  {currentIndex + 1}/{posts.length}
-                </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleNextVideo(); }}
-                  className="hover:text-[#D4AF37] transition-colors"
-                  title="Siguiente visión"
-                >
-                  <span className="material-symbols-outlined text-xs">expand_more</span>
-                </button>
-              </div>
-
-              <span className="text-[10px] font-medium text-[#D4AF37] bg-black/35 backdrop-blur-md border border-[#D4AF37]/25 px-2.5 py-0.5 rounded-full">
-                ✦ {currentVideo.category}
-              </span>
-            </div>
-
-            {currentVideo.mediaType === 'video' && (
-              <button
-                onClick={toggleMute}
-                className="pointer-events-auto w-8 h-8 rounded-full bg-black/35 backdrop-blur-md border border-white/10 flex items-center justify-center text-[#F7E7C1] hover:text-[#D4AF37] transition-transform"
-                title={isMuted ? 'Activar sonido' : 'Silenciar'}
-              >
-                <span className="material-symbols-outlined text-sm">
-                  {isMuted ? 'volume_off' : 'volume_up'}
-                </span>
-              </button>
-            )}
-          </div>
-
-          {/* ==================== BARRA LATERAL DERECHA ESOTÉRICA (ESTILO TIKTOK LIMPIO) ==================== */}
-          <div className="absolute right-3 bottom-16 z-20 flex flex-col items-center gap-4">
-            {/* Avatar del Creador con Aro Místico + Botón '+' de Vínculo */}
-            <div className="relative mb-1">
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewTarotistaProfile(currentVideo.tarotistaId);
-                }}
-                className="w-12 h-12 rounded-full story-ring p-[2px] cursor-pointer shadow-[0_0_15px_rgba(212,175,55,0.3)] hover:scale-105 transition-transform"
-              >
-                <img
-                  src={currentVideo.tarotistaAvatar}
-                  alt={currentVideo.tarotistaName}
-                  className="w-full h-full object-cover rounded-full bg-[#1A1026] border border-[#0B0911]"
-                />
-              </div>
-              {currentUser && currentUser.id !== currentVideo.tarotistaId ? (
-                <button
-                  onClick={(e) => handleToggleFollow(e, currentVideo.tarotistaId)}
-                  className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border border-[#0B0911] shadow-md transition-transform hover:scale-110 ${
-                    isFollowingAuthor
-                      ? 'bg-[#2E1B47] text-[#D4AF37]'
-                      : 'bg-[#D4AF37] text-[#0B0911]'
-                  }`}
-                  title={isFollowingAuthor ? 'Siguiendo' : 'Seguir'}
-                >
-                  {isFollowingAuthor ? '✓' : '✦'}
-                </button>
-              ) : currentVideo.isVerified ? (
-                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 bg-[#D4AF37] text-[#0B0911] rounded-full w-4 h-4 flex items-center justify-center border border-[#0B0911] text-[9px] font-bold">
-                  ☼
-                </div>
-              ) : null}
-            </div>
-
-            {/* 1. RESONAR (Llama Sagrada — reemplaza al corazón típico) */}
-            <button
-              onClick={handleToggleLike}
-              className="flex flex-col items-center gap-0.5 group"
-              title={currentVideo.isLikedByCurrentUser ? 'Retirar resonancia' : 'Resonar con esta visión'}
-            >
-              <div
-                className={`p-1.5 transition-all group-active:scale-75 ${
-                  currentVideo.isLikedByCurrentUser
-                    ? 'text-[#D4AF37] esoteric-glow scale-110'
-                    : 'text-[#F7E7C1] icon-drop-shadow group-hover:text-[#D4AF37]'
-                }`}
-              >
-                <SacredFlameIcon className="w-8 h-8" filled={!!currentVideo.isLikedByCurrentUser} />
-              </div>
-              <span
-                className={`text-xs font-bold icon-drop-shadow ${
-                  currentVideo.isLikedByCurrentUser ? 'text-[#D4AF37]' : 'text-[#F7E7C1]'
-                }`}
-              >
-                {currentVideo.likes}
-              </span>
-            </button>
-
-            {/* 2. ORÁCULO / SUSURROS (Bola de Cristal — reemplaza al bocadillo de comentarios) */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowCommentsModal(true);
-              }}
-              className="flex flex-col items-center gap-0.5 group"
-              title="Abrir Oráculo de Comentarios"
-            >
-              <div className="p-1.5 text-[#F7E7C1] icon-drop-shadow transition-all group-hover:text-[#D4AF37] group-active:scale-90">
-                <CrystalBallIcon className="w-8 h-8" />
-              </div>
-              <span className="text-xs font-bold text-[#F7E7C1] icon-drop-shadow">
-                {currentVideo.commentsCount}
-              </span>
-            </button>
-
-            {/* 3. GRIMORIO (Carta Arcano — reemplaza al marcador típico) */}
-            <button
-              onClick={handleToggleSave}
-              className="flex flex-col items-center gap-0.5 group"
-              title={currentVideo.isSavedByCurrentUser ? 'Quitar de tu Grimorio' : 'Guardar en tu Grimorio'}
-            >
-              <div
-                className={`p-1.5 transition-all group-active:scale-90 ${
-                  currentVideo.isSavedByCurrentUser
-                    ? 'text-[#D4AF37] esoteric-glow scale-105'
-                    : 'text-[#F7E7C1] icon-drop-shadow group-hover:text-[#D4AF37]'
-                }`}
-              >
-                <ArcanaGrimoireIcon className="w-8 h-8" filled={!!currentVideo.isSavedByCurrentUser} />
-              </div>
-              <span
-                className={`text-[10px] font-semibold icon-drop-shadow ${
-                  currentVideo.isSavedByCurrentUser ? 'text-[#D4AF37]' : 'text-[#F7E7C1]/90'
-                }`}
-              >
-                {currentVideo.isSavedByCurrentUser ? 'En Grimorio' : 'Grimorio'}
-              </span>
-            </button>
-
-            {/* 4. EXPANDIR (Estrella Fugaz — reemplaza a la flecha de compartir) */}
-            <button
-              onClick={handleShare}
-              className="flex flex-col items-center gap-0.5 group"
-              title="Expandir visión (Copiar enlace)"
-            >
-              <div className="p-1.5 text-[#F7E7C1] icon-drop-shadow transition-all group-hover:text-[#D4AF37] group-active:scale-90">
-                <ShootingStarIcon className="w-7 h-7" />
-              </div>
-              <span className="text-[10px] font-semibold text-[#F7E7C1]/90 icon-drop-shadow">
-                Expandir
-              </span>
-            </button>
-          </div>
-
-          {/* ==================== METADATOS INFERIORES LIMPIOS (ESTILO TIKTOK / REELS) ==================== */}
-          <div className="absolute bottom-4 left-4 right-16 z-20 flex flex-col gap-1.5 pointer-events-auto">
-            {/* Píldora Sutil de Consulta Privada si es Tarotista Verificado */}
-            {currentVideo.isVerified && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onBookConsultation(currentVideo.tarotistaId);
-                }}
-                className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#2E1B47]/85 backdrop-blur-md border border-[#D4AF37]/45 text-xs w-fit shadow-lg hover:border-[#D4AF37] hover:scale-[1.02] transition-all"
-              >
-                <span className="w-2 h-2 rounded-full bg-[#D4AF37] animate-ping" />
-                <span className="font-semibold text-[#F7E7C1]">Oráculo abierto</span>
-                <span className="text-[#D4AF37] font-bold">
-                  • Consultar {profile ? `(€${profile.pricePerMinEur.toFixed(2)}/m)` : ''} ✦
-                </span>
-              </button>
-            )}
-
-            <div className="flex items-center flex-wrap gap-2">
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewTarotistaProfile(currentVideo.tarotistaId);
-                }}
-                className="flex items-center gap-1.5 cursor-pointer group"
-              >
-                <span className="font-cinzel text-sm sm:text-base font-bold text-[#F7E7C1] group-hover:text-[#D4AF37] transition-colors drop-shadow">
-                  @{currentVideo.tarotistaName.toLowerCase().replace(/\s+/g, '_')}
-                </span>
-                {currentVideo.isVerified && (
-                  <span
-                    className="inline-flex items-center justify-center text-[#D4AF37] esoteric-glow"
-                    title="Vidente Consagrada Verificada"
-                  >
-                    <AlchemicalSunIcon className="w-4 h-4" />
-                  </span>
-                )}
-              </div>
-
-              {currentUser && currentUser.id !== currentVideo.tarotistaId && !isFollowingAuthor && (
-                <button
-                  onClick={(e) => handleToggleFollow(e, currentVideo.tarotistaId)}
-                  className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/10 backdrop-blur-md text-[#D4AF37] border border-[#D4AF37]/40 hover:bg-[#D4AF37] hover:text-[#0B0911] transition-all"
-                >
-                  + Seguir
-                </button>
-              )}
-            </div>
-
-            <p className="text-xs text-[#F7E7C1]/95 line-clamp-2 leading-relaxed drop-shadow">
-              {renderTextWithHashtags(currentVideo.title)}
-            </p>
-
-            {currentVideo.description && (
-              <p className="text-[11px] text-[#F7E7C1]/70 line-clamp-1 italic">
-                {renderTextWithHashtags(currentVideo.description)}
-              </p>
-            )}
-
-            <div className="flex items-center gap-1.5 text-[11px] text-[#D4AF37]/90 pt-0.5">
-              <span>✦</span>
-              <span className="truncate max-w-[200px]">
-                {currentVideo.soundTitle || 'Frecuencia Astral KABALY'}
-              </span>
-            </div>
-          </div>
-
-          {/* Barra de Progreso Interactiva (Scrubber estilo TikTok) para Vídeos */}
-          {isUnlocked && currentVideo.mediaType === 'video' && (
-            <div
-              onClick={handleScrubVideo}
-              className="absolute bottom-0 left-0 right-0 h-2.5 z-30 flex items-end cursor-pointer group/scrub"
-              title="Toca para avanzar o retroceder en el vídeo"
-            >
-              <div className="w-full h-1 group-hover/scrub:h-2 bg-white/20 transition-all overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] shadow-[0_0_8px_#D4AF37] transition-all duration-75"
-                  style={{ width: `${videoProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Drawer de Comentarios Reales con hilos de 1 nivel */}
-        <CommentsDrawer
-          isOpen={showCommentsModal}
-          videoId={currentVideo?.id || ''}
-          postAuthorId={currentVideo?.tarotistaId}
-          currentUser={currentUser}
-          onClose={() => setShowCommentsModal(false)}
-          onOpenAuthModal={() => {
-            setShowCommentsModal(false);
-            onOpenAuthModal?.();
-          }}
-          onCommentCountChange={(newCount) => {
-            if (currentVideo) {
-              setPosts(prev => prev.map(p => p.id === currentVideo.id ? { ...p, commentsCount: newCount } : p));
-            }
-          }}
-          onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
-        />
-
-        {/* Modal «Expandir por el Cosmos» (Compartir por Mensaje Directo / WhatsApp / Enlace) */}
-        {showShareModal && currentVideo && (
-          <div
-            className="absolute inset-0 z-50 bg-[#0B0911]/85 backdrop-blur-xl flex flex-col justify-end animate-in slide-in-from-bottom duration-200"
-            onClick={() => setShowShareModal(false)}
-          >
-            <div
-              className="bg-[#140D21] border-t border-[#D4AF37]/40 rounded-t-3xl p-5 space-y-4 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <div className="flex items-center gap-2 text-[#D4AF37]">
-                  <ShootingStarIcon className="w-5 h-5" />
-                  <h4 className="font-cinzel text-sm font-bold text-[#F7E7C1]">
-                    Expandir Visión por el Cosmos
-                  </h4>
-                </div>
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className="text-[#A09BAE] hover:text-white text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Enviar rápido por Mensaje Directo a Videntes o Contactos */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]/80 block">
-                  ✦ Enviar por Susurro Privado (DM) en 1 toque
-                </span>
-                <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-1">
-                  {tarotistaProfiles.slice(0, 8).map((tar) => (
-                    <button
-                      key={tar.id}
-                      onClick={() => handleSendPostViaDm(tar.userId || tar.id)}
-                      disabled={sendingShareToId === (tar.userId || tar.id)}
-                      className="flex flex-col items-center gap-1 shrink-0 group"
-                    >
-                      <div className="w-12 h-12 rounded-full p-0.5 bg-gradient-to-tr from-[#D4AF37] to-[#5A2D82] group-hover:scale-105 transition-transform">
-                        <img src={tar.avatar} alt={tar.professionalName} className="w-full h-full rounded-full object-cover" />
-                      </div>
-                      <span className="text-[10px] text-[#F7E7C1] max-w-[64px] truncate">
-                        {tar.professionalName.split(' ')[0]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Acciones de enlace y redes externas */}
-              <div className="grid grid-cols-2 gap-2.5 pt-1">
-                <button
-                  onClick={handleCopyShareLink}
-                  className="bg-[#2E1B47] hover:bg-[#5A2D82] border border-[#D4AF37]/40 text-[#F7E7C1] py-2.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                >
-                  <span>🔗</span>
-                  <span>Copiar Vínculo</span>
-                </button>
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`🔮 Mira esta visión en KABALY: "${currentVideo.title}" ${window.location.origin}/?post=${currentVideo.id}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setShowShareModal(false)}
-                  className="bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-200 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                >
-                  <span>💬</span>
-                  <span>WhatsApp</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Modales de Stories */}
-      <CreateStoryModal
-        isOpen={showCreateStoryModal}
-        onClose={() => setShowCreateStoryModal(false)}
-        onStoryCreated={() => {
-          setShowCreateStoryModal(false);
-          fetchStories();
-        }}
-      />
-
-      <StoryViewerModal
-        isOpen={!!selectedStoryGroup}
-        storyGroup={selectedStoryGroup}
-        currentUser={currentUser}
-        onClose={() => setSelectedStoryGroup(null)}
-        onStoryDeleted={() => {
-          setSelectedStoryGroup(null);
-          fetchStories();
-        }}
-        onViewersRequested={(storyId) => setViewersStoryId(storyId)}
-        onOpenUserProfile={(uid) => onViewTarotistaProfile(uid)}
-      />
-
-      <StoryViewersModal
-        isOpen={!!viewersStoryId}
-        storyId={viewersStoryId || ''}
-        onClose={() => setViewersStoryId(null)}
-      />
-
-      {/* Modal de Confirmación de Desbloqueo de Publicación Exclusiva */}
-      {confirmingUnlockPost && (
-        <div className="fixed inset-0 z-50 bg-[#0B0911]/90 backdrop-blur-xl flex items-center justify-center p-4">
-          <div className="bg-[#1A1026] border-2 border-[#D4AF37] rounded-3xl p-6 max-w-sm w-full text-center gold-glow space-y-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#5A2D82] to-[#D4AF37] p-0.5 mx-auto gold-glow">
-              <div className="w-full h-full bg-[#1A1026] rounded-full flex items-center justify-center">
-                <span className="material-symbols-outlined text-3xl text-[#D4AF37]">lock_open</span>
-              </div>
-            </div>
-
-            <div>
-              <span className="text-[10px] uppercase font-bold text-[#D4AF37] tracking-widest block mb-1">
-                Confirmar Desbloqueo de Contenido
-              </span>
-              <h3 className="font-cinzel text-base font-bold text-[#F7E7C1]">
-                {confirmingUnlockPost.title}
-              </h3>
-              <p className="text-xs text-[#A7A7A7] mt-1">
-                Autor: <strong className="text-[#D4AF37]">{confirmingUnlockPost.tarotistaName}</strong>
-              </p>
-            </div>
-
-            <div className="bg-[#0B0911]/60 rounded-xl p-3 border border-[#D4AF37]/30 text-xs space-y-1.5 text-left">
-              <div className="flex justify-between text-[#F7E7C1]">
-                <span>Precio en monedas:</span>
-                <span className="font-bold text-[#D4AF37]">{confirmingUnlockPost.priceCoins || 100} Monedas</span>
-              </div>
-              <div className="flex justify-between text-[#A7A7A7]">
-                <span>Tu saldo actual:</span>
-                <span>{currentUser?.coinsBalance || 0} Monedas</span>
-              </div>
-              <div className="flex justify-between text-[#A7A7A7] pt-1 border-t border-white/10">
-                <span>Saldo tras desbloqueo:</span>
-                <span className="text-[#F7E7C1] font-bold">
-                  {(currentUser?.coinsBalance || 0) - (confirmingUnlockPost.priceCoins || 100)} Monedas
-                </span>
-              </div>
-            </div>
-
-            {unlockError && (
-              <p className="text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-500/30">
-                {unlockError}
-              </p>
-            )}
-
-            <p className="text-[10px] text-[#A7A7A7] italic">
-              Esta compra es única y te concede acceso permanente a esta publicación desde tu sección privada «Mis compras».
-            </p>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setConfirmingUnlockPost(null)}
-                disabled={isUnlocking}
-                className="flex-1 py-2.5 rounded-xl border border-[#D4AF37]/40 text-xs font-bold text-[#A7A7A7] hover:text-[#F7E7C1]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmUnlock}
-                disabled={isUnlocking}
-                className="flex-1 bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider gold-glow hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-              >
-                {isUnlocking ? 'Desbloqueando...' : `Desbloquear (${confirmingUnlockPost.priceCoins || 100} 🪙)`}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
 };
-

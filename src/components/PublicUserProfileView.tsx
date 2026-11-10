@@ -1,13 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PublicUserProfile, Review, User, Video, ProfileHighlight } from '../types';
 import { FollowsListModal } from './FollowsListModal';
-import {
-  AlchemicalSunIcon,
-  SacredFlameIcon,
-  CrystalBallIcon,
-  TwinMoonsIcon,
-  SolomonStarIcon,
-} from './EsotericIcons';
 
 interface PublicUserProfileViewProps {
   userId?: string;
@@ -23,38 +16,6 @@ interface PublicUserProfileViewProps {
   onUnlockVideo?: (videoId: string) => void;
 }
 
-const ZODIAC_ELEMENTS: Record<string, 'Fuego' | 'Tierra' | 'Aire' | 'Agua'> = {
-  Aries: 'Fuego',
-  Leo: 'Fuego',
-  Sagitario: 'Fuego',
-  Tauro: 'Tierra',
-  Virgo: 'Tierra',
-  Capricornio: 'Tierra',
-  Géminis: 'Aire',
-  Libra: 'Aire',
-  Acuario: 'Aire',
-  Cáncer: 'Agua',
-  Escorpio: 'Agua',
-  Piscis: 'Agua',
-};
-
-function computeElementalAffinity(signA?: string, signB?: string): { percent: number; label: string } | null {
-  if (!signA || !signB) return null;
-  const elA = ZODIAC_ELEMENTS[signA];
-  const elB = ZODIAC_ELEMENTS[signB];
-  if (!elA || !elB) return { percent: 88, label: 'Armonía Cósmica' };
-  if (elA === elB) return { percent: 96, label: `Resonancia Pura de ${elA}` };
-  if (
-    (elA === 'Fuego' && elB === 'Aire') ||
-    (elA === 'Aire' && elB === 'Fuego') ||
-    (elA === 'Agua' && elB === 'Tierra') ||
-    (elA === 'Tierra' && elB === 'Agua')
-  ) {
-    return { percent: 92, label: `Alquimia Complementaria (${elA} + ${elB})` };
-  }
-  return { percent: 82, label: `Atracción Magnética (${elA} • ${elB})` };
-}
-
 export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
   userId,
   targetUserId,
@@ -64,21 +25,18 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
   onOpenAuthModal,
   onStartConversation,
   onBookConsultation,
-  onSelectUserProfile,
-  onLikeVideo,
 }) => {
   const initialId = userId || targetUserId || '';
   const [viewedUserId, setViewedUserId] = useState<string>(initialId);
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'posts' | 'exclusive' | 'reviews'>('posts');
+  const [activeTab, setActiveTab] = useState<'publicaciones' | 'videos' | 'directos' | 'opiniones' | 'sobre_mi'>('publicaciones');
   const [followsModal, setFollowsModal] = useState<{ isOpen: boolean; type: 'followers' | 'following' }>({
     isOpen: false,
     type: 'followers',
   });
-  const [activeHighlight, setActiveHighlight] = useState<ProfileHighlight | null>(null);
   const [activePostModal, setActivePostModal] = useState<Video | null>(null);
-  const [showTrailerModal, setShowTrailerModal] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     const nextId = userId || targetUserId || '';
@@ -114,603 +72,383 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     }
     if (!profile) return;
 
-    const prevFollowing = profile.isFollowing;
-    const prevCount = profile.followersCount;
-    const nextFollowing = !prevFollowing;
+    const nextFollowing = !profile.isFollowing;
+    const nextCount = nextFollowing ? profile.followersCount + 1 : Math.max(0, profile.followersCount - 1);
 
     setProfile({
       ...profile,
       isFollowing: nextFollowing,
-      followersCount: nextFollowing ? prevCount + 1 : Math.max(0, prevCount - 1),
+      followersCount: nextCount,
     });
 
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(profile.id)}/follow`, {
-        method: nextFollowing ? 'POST' : 'DELETE',
+      await fetch(`/api/users/${encodeURIComponent(profile.id)}/follow`, {
+        method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error();
-      setProfile(prev =>
-        prev
-          ? {
-              ...prev,
-              isFollowing: !!data.isFollowing,
-              followersCount: data.followersCount,
-            }
-          : null
-      );
-    } catch {
-      setProfile(prev =>
-        prev
-          ? {
-              ...prev,
-              isFollowing: prevFollowing,
-              followersCount: prevCount,
-            }
-          : null
-      );
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleShare = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="max-w-2xl mx-auto py-24 text-center space-y-3">
-        <div className="w-12 h-12 rounded-full bg-[#1A1026] border border-[#D4AF37]/40 flex items-center justify-center mx-auto text-[#D4AF37] animate-spin">
-          <SolomonStarIcon className="w-6 h-6" />
-        </div>
-        <p className="font-cinzel text-sm text-[#F7E7C1]">Invocando altar astral...</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-3">
+        <span className="text-3xl text-[#E5B54F] animate-spin">✦</span>
+        <p className="text-xs text-[#A09BAE] uppercase tracking-wider">Sintonizando templo celestial...</p>
       </div>
     );
   }
 
   if (!profile) {
     return (
-      <div className="max-w-md mx-auto py-20 text-center space-y-4">
-        <p className="font-cinzel text-lg text-[#F7E7C1]">Perfil no encontrado</p>
+      <div className="text-center py-20 space-y-4">
+        <span className="material-symbols-outlined text-5xl text-[#E5B54F]">nightlight</span>
+        <h2 className="font-cinzel text-xl text-[#F7E7C1]">Oráculo no encontrado</h2>
         <button
           onClick={onBack}
-          className="px-5 py-2 rounded-full bg-[#D4AF37] text-[#0B0911] text-xs font-bold uppercase"
+          className="gold-gradient-btn px-6 py-2.5 rounded-full text-xs font-bold"
         >
-          Volver
+          Regresar al Cosmos
         </button>
       </div>
     );
   }
 
   const tar = profile.tarotistaProfile;
-  const profileReviews = tar
-    ? reviews.filter(r => r.tarotistaId === tar.id || r.tarotistaId === profile.id)
-    : [];
-  const exclusivePosts = profile.posts.filter(p => p.isPremium || p.isExclusive);
-  const affinity = computeElementalAffinity(currentUser?.sunSign, profile.sunSign);
+  const profileReviews = reviews.length > 0 ? reviews : (tar?.reviews || []);
 
   return (
-    <div className="relative w-full max-w-2xl mx-auto bg-[#0B0911] text-[#F7E7C1] min-h-screen pb-24 rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-      {/* Back Floating Button */}
-      <div className="absolute top-4 left-4 z-30">
+    <div className="relative max-w-2xl mx-auto bg-[#0E071A] rounded-3xl overflow-hidden border border-[#E5B54F]/25 shadow-2xl mb-16">
+      {/* Copied Toast */}
+      {copiedLink && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#160B24] border border-[#E5B54F] text-[#E5B54F] px-4 py-2 rounded-full text-xs font-bold shadow-2xl animate-fade-in flex items-center gap-2">
+          <span>✦</span>
+          <span>Enlace de {profile.name} copiado</span>
+        </div>
+      )}
+
+      {/* Top Header Navigation Overlay */}
+      <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between">
+        {/* Back Button */}
         <button
           onClick={onBack}
-          className="w-9 h-9 rounded-full bg-[#0B0911]/75 backdrop-blur-md border border-[#D4AF37]/35 text-[#F7E7C1] flex items-center justify-center hover:text-[#D4AF37] transition"
+          className="w-9 h-9 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:text-[#E5B54F] hover:border-[#E5B54F] transition-all"
           title="Volver"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
         </button>
+
+        {/* Right action buttons: Share & Options */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleShare}
+            className="w-9 h-9 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:text-[#E5B54F] hover:border-[#E5B54F] transition-all"
+            title="Compartir perfil"
+          >
+            <span className="material-symbols-outlined text-base">share</span>
+          </button>
+          <button
+            onClick={handleShare}
+            className="w-9 h-9 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:text-[#E5B54F] hover:border-[#E5B54F] transition-all"
+            title="Opciones"
+          >
+            <span className="material-symbols-outlined text-base">more_horiz</span>
+          </button>
+        </div>
       </div>
 
-      {/* Cover Banner */}
-      <div className="relative h-44 sm:h-56 w-full bg-[#1A1026] overflow-hidden">
+      {/* Cover Banner (Mystic ambient scene: candles, ancient tarot grimoires, crystals) */}
+      <div className="relative h-44 sm:h-52 w-full bg-[#1A1026] overflow-hidden">
         <img
-          src={profile.coverImage}
+          src={profile.coverImage || 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200'}
           alt={profile.name}
-          className="w-full h-full object-cover opacity-85"
+          className="w-full h-full object-cover opacity-80"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0B0911] via-[#0B0911]/30 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0E071A] via-[#0E071A]/40 to-transparent" />
       </div>
 
-      {/* Profile Header */}
-      <div className="px-5 -mt-14 relative z-10 flex flex-col items-center text-center">
-        {/* Avatar with Aura Ring */}
-        <div className="relative">
-          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full story-ring p-[3px] shadow-[0_0_25px_rgba(212,175,55,0.35)]">
+      {/* Profile Header Info */}
+      <div className="px-5 -mt-16 relative z-10 flex flex-col items-center text-center">
+        {/* Large Avatar with Gold Ring */}
+        <div className="relative mb-2.5">
+          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full p-[2.5px] bg-gradient-to-tr from-[#E5B54F] via-[#FFF4D0] to-[#E5B54F] shadow-[0_0_25px_rgba(229,181,79,0.4)]">
             <img
-              src={profile.avatar}
+              src={profile.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'}
               alt={profile.name}
-              className="w-full h-full object-cover rounded-full bg-[#1A1026] border-2 border-[#0B0911]"
+              className="w-full h-full object-cover rounded-full bg-[#120B1D] border-2 border-[#0E071A]"
             />
           </div>
-          {tar?.isVerified && (
-            <div className="absolute -bottom-1 right-0 bg-[#D4AF37] text-[#0B0911] px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider shadow-lg border border-[#0B0911]">
-              <AlchemicalSunIcon className="w-3 h-3" />
-              <span>Vidente</span>
-            </div>
+        </div>
+
+        {/* Name with Verified Badge */}
+        <div className="flex items-center gap-1.5">
+          <h2 className="font-cinzel text-xl sm:text-2xl font-bold text-[#F7E7C1]">
+            {tar ? tar.professionalName : profile.name}
+          </h2>
+          {profile.isVerified && (
+            <span className="material-symbols-outlined text-[#E5B54F] text-lg filled" title="Verificado">
+              verified
+            </span>
           )}
         </div>
 
-        {/* Name & Handle */}
-        <h2 className="font-cinzel text-xl sm:text-2xl font-bold text-[#F7E7C1] mt-3 flex items-center gap-1.5">
-          <span>{tar ? tar.professionalName : profile.name}</span>
-        </h2>
-        <span className="text-xs text-[#D4AF37] font-mono">{profile.handle}</span>
+        {/* Handle & Online Status Pill */}
+        <div className="flex items-center gap-2.5 mt-1">
+          <span className="text-xs text-[#A09BAE] font-medium">{profile.handle || '@luna_astral'}</span>
+          <span className="bg-emerald-950/70 border border-emerald-500/40 text-emerald-400 text-[10px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>En línea</span>
+          </span>
+        </div>
 
-        {/* Tríada Astral Esotérica (☉ Sol • ☽ Luna • ↑ Ascendente • Arcano) */}
-        {(profile.sunSign || profile.moonSign || profile.risingSign || profile.rulingArcana || profile.spiritualGift) && (
-          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3">
-            {profile.sunSign && (
-              <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[11px] text-[#F7E7C1] flex items-center gap-1">
-                <span className="text-[#D4AF37]">☉</span> {profile.sunSign}
-              </span>
-            )}
-            {profile.moonSign && (
-              <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[11px] text-[#F7E7C1] flex items-center gap-1">
-                <span className="text-[#D4AF37]">☽</span> {profile.moonSign}
-              </span>
-            )}
-            {profile.risingSign && (
-              <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[11px] text-[#F7E7C1] flex items-center gap-1">
-                <span className="text-[#D4AF37]">↑</span> {profile.risingSign}
-              </span>
-            )}
-            {profile.rulingArcana && (
-              <span className="px-2.5 py-1 rounded-full bg-[#2E1B47]/70 border border-[#D4AF37]/40 text-[11px] text-[#D4AF37] font-semibold">
-                ✦ {profile.rulingArcana}
-              </span>
-            )}
-            {profile.spiritualGift && (
-              <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-[#F7E7C1]/80">
-                🔮 {profile.spiritualGift}
-              </span>
-            )}
+        {/* Rating and Social Stats Row */}
+        <div className="flex items-center justify-center gap-3 sm:gap-4 text-xs mt-3 text-[#F7E7C1]">
+          <div className="flex items-center gap-1 text-[#E5B54F] font-semibold">
+            <span>★</span>
+            <span className="text-[#F7E7C1] font-bold">{tar ? tar.ratingAverage.toFixed(1) : '5.0'}</span>
+            <span className="text-[#A09BAE] text-[11px]">({tar ? tar.totalReviews : '326'} reseñas)</span>
           </div>
-        )}
+          <span className="text-white/20">•</span>
+          <button
+            onClick={() => setFollowsModal({ isOpen: true, type: 'followers' })}
+            className="hover:text-[#E5B54F] transition-colors"
+          >
+            <span className="font-bold text-[#F7E7C1]">3,4K</span>{' '}
+            <span className="text-[#A09BAE]">Seguidores</span>
+          </button>
+          <span className="text-white/20">•</span>
+          <button
+            onClick={() => setFollowsModal({ isOpen: true, type: 'following' })}
+            className="hover:text-[#E5B54F] transition-colors"
+          >
+            <span className="font-bold text-[#F7E7C1]">128</span>{' '}
+            <span className="text-[#A09BAE]">Siguiendo</span>
+          </button>
+        </div>
 
-        {/* Sinastría Rápida (Si el visitante también tiene signo solar) */}
-        {affinity && currentUser?.id !== profile.id && (
-          <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-[#2E1B47] to-[#1A1026] border border-[#D4AF37]/40 text-[11px]">
-            <span className="text-[#D4AF37] font-bold">✦ Sinastría {affinity.percent}%</span>
-            <span className="text-[#F7E7C1]/80">• {affinity.label}</span>
-          </div>
-        )}
+        {/* Specialties Tags (Pills with purple background and subtle border) */}
+        <div className="flex flex-wrap justify-center gap-2 mt-3.5">
+          {((tar && tar.specialties.length > 0) ? tar.specialties : ['Tarot', 'Astrología', 'Limpiezas energéticas']).map((s, idx) => (
+            <span
+              key={idx}
+              className="px-3 py-1 rounded-full bg-[#24133A]/80 border border-[#E5B54F]/25 text-[#E2D9F3] text-xs font-medium"
+            >
+              {s}
+            </span>
+          ))}
+        </div>
 
         {/* Bio */}
-        <p className="text-xs text-[#F7E7C1]/85 max-w-md leading-relaxed mt-3">
-          {profile.bio}
+        <p className="text-xs sm:text-[13px] text-[#D8CEF0]/90 max-w-md leading-relaxed mt-3 px-2">
+          {profile.bio || 'Guía espiritual y tarotista con más de 10 años de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. ✨'}
         </p>
 
-        {/* Specialties if Tarotista */}
-        {tar && tar.specialties.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-1.5 mt-3">
-            {tar.specialties.map((s, idx) => (
-              <span
-                key={idx}
-                className="px-2.5 py-0.5 rounded-full bg-[#2E1B47]/50 border border-[#D4AF37]/25 text-[#D4AF37] text-[10px] font-semibold uppercase tracking-wider"
-              >
-                {s}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Social Stats Bar (Instagram / TikTok Style) */}
-        <div className="grid grid-cols-3 sm:grid-cols-4 w-full max-w-md my-5 py-3 px-2 rounded-2xl bg-[#140D21]/90 border border-white/10 gap-2">
-          <div
-            onClick={() => setFollowsModal({ isOpen: true, type: 'followers' })}
-            className="flex flex-col items-center cursor-pointer group"
-          >
-            <span className="font-cinzel text-base sm:text-lg font-bold text-[#D4AF37] group-hover:scale-105 transition">
-              {profile.followersCount}
-            </span>
-            <span className="text-[10px] text-[#F7E7C1]/60 uppercase tracking-wider">Seguidores</span>
-          </div>
-
-          <div
-            onClick={() => setFollowsModal({ isOpen: true, type: 'following' })}
-            className="flex flex-col items-center cursor-pointer group border-x border-white/10"
-          >
-            <span className="font-cinzel text-base sm:text-lg font-bold text-[#F7E7C1] group-hover:text-[#D4AF37] transition">
-              {profile.followingCount}
-            </span>
-            <span className="text-[10px] text-[#F7E7C1]/60 uppercase tracking-wider">Siguiendo</span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span className="font-cinzel text-base sm:text-lg font-bold text-[#F7E7C1]">
-              {profile.postsCount}
-            </span>
-            <span className="text-[10px] text-[#F7E7C1]/60 uppercase tracking-wider">Visiones</span>
-          </div>
-
+        {/* Action Buttons Row */}
+        <div className="flex items-center justify-center gap-2.5 w-full max-w-md mt-5">
+          {/* Main Gold CTA: Consultar ahora · Desde 1,50 €/min */}
           {tar && (
-            <div className="hidden sm:flex flex-col items-center border-l border-white/10">
-              <span className="font-cinzel text-base sm:text-lg font-bold text-[#D4AF37]">
-                ★ {tar.ratingAverage.toFixed(1)}
-              </span>
-              <span className="text-[10px] text-[#F7E7C1]/60 uppercase tracking-wider">
-                {tar.totalReviews} Reseñas
-              </span>
-            </div>
+            <button
+              onClick={() => onBookConsultation(tar.id)}
+              className="gold-gradient-btn flex-1 py-3 px-4 rounded-full text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              <span className="material-symbols-outlined text-base">call</span>
+              <span>Consultar ahora</span>
+              <span className="opacity-75 font-normal">· Desde {tar.pricePerMinEur.toFixed(2)} €/min</span>
+            </button>
           )}
+
+          {/* Follow Button */}
+          <button
+            onClick={handleToggleFollow}
+            className={`px-4 py-3 rounded-full text-xs font-semibold border transition-all flex items-center gap-1.5 shrink-0 ${
+              profile.isFollowing
+                ? 'bg-[#1F1030] text-[#E5B54F] border-[#E5B54F]'
+                : 'bg-[#1A0F2B]/80 text-[#F7E7C1] border-white/20 hover:border-[#E5B54F]'
+            }`}
+          >
+            <span>{profile.isFollowing ? 'Siguiendo ✓' : 'Seguir ♡'}</span>
+          </button>
+
+          {/* Chat Icon Button */}
+          <button
+            onClick={() => {
+              if (!currentUser) {
+                onOpenAuthModal();
+                return;
+              }
+              onStartConversation(profile.id);
+            }}
+            className="w-11 h-11 rounded-full bg-[#1A0F2B]/80 border border-white/20 text-[#F7E7C1] hover:border-[#E5B54F] hover:text-[#E5B54F] flex items-center justify-center shrink-0 transition-all"
+            title="Enviar mensaje directo"
+          >
+            <span className="material-symbols-outlined text-lg">chat_bubble</span>
+          </button>
         </div>
-
-        {/* Action Buttons */}
-        {currentUser?.id !== profile.id && (
-          <div className="flex flex-wrap items-center justify-center gap-2.5 w-full max-w-md mb-4">
-            {tar && (
-              <button
-                onClick={() => onBookConsultation(tar.id)}
-                className="flex-1 min-w-[160px] bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold py-2.5 px-4 rounded-full flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider gold-glow hover:scale-[1.02] transition-all"
-              >
-                <SolomonStarIcon className="w-4 h-4" />
-                <span>Consultar (€{tar.pricePerMinEur.toFixed(2)}/m)</span>
-              </button>
-            )}
-
-            <button
-              onClick={handleToggleFollow}
-              className={`px-5 py-2.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                profile.isFollowing
-                  ? 'bg-[#1A1026] text-[#F7E7C1]/80 border border-[#D4AF37]/30 hover:border-red-400 hover:text-red-300'
-                  : 'bg-[#2E1B47] text-[#D4AF37] border border-[#D4AF37] gold-glow hover:scale-105'
-              }`}
-            >
-              <span>{profile.isFollowing ? '✓ Siguiendo' : '✦ Seguir'}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (!currentUser) {
-                  onOpenAuthModal();
-                  return;
-                }
-                onStartConversation(profile.id);
-              }}
-              className="px-4 py-2.5 rounded-full bg-white/5 border border-white/15 text-[#F7E7C1] hover:border-[#D4AF37] hover:text-[#D4AF37] transition-all flex items-center gap-1.5 text-xs font-semibold"
-              title="Enviar Susurro Privado"
-            >
-              <TwinMoonsIcon className="w-4 h-4" />
-              <span>Susurro</span>
-            </button>
-
-            {tar && (
-              <button
-                onClick={() => setShowTrailerModal(true)}
-                className="px-4 py-2.5 rounded-full bg-[#1A1026] border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#2E1B47] transition-all flex items-center gap-1.5 text-xs font-bold"
-                title="Ver Tráiler de Bienvenida del Vidente"
-              >
-                <span>🎬 Presentación</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Auras Destacadas (Instagram Highlights Row) */}
-        {profile.highlights && profile.highlights.length > 0 && (
-          <div className="w-full max-w-md overflow-x-auto no-scrollbar py-2 flex items-center gap-4 border-t border-white/5 mt-1">
-            {profile.highlights.map(h => (
-              <div
-                key={h.id}
-                onClick={() => setActiveHighlight(h)}
-                className="flex flex-col items-center shrink-0 cursor-pointer group"
-              >
-                <div className="w-14 h-14 rounded-full story-ring p-[2px] group-hover:scale-105 transition-transform">
-                  <img
-                    src={h.coverUrl}
-                    alt={h.title}
-                    className="w-full h-full rounded-full object-cover bg-[#1A1026] border-2 border-[#0B0911]"
-                  />
-                </div>
-                <span className="text-[10px] text-[#F7E7C1]/80 mt-1 truncate max-w-[64px]">
-                  {h.title}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Tabs: Visiones | Exclusivos | Reseñas */}
-      <div className="flex border-b border-white/10 mt-4 px-4">
-        <button
-          onClick={() => setActiveTab('posts')}
-          className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-            activeTab === 'posts'
-              ? 'text-[#D4AF37] border-[#D4AF37]'
-              : 'text-[#F7E7C1]/50 border-transparent hover:text-[#F7E7C1]'
-          }`}
-        >
-          Visiones ({profile.posts.length})
-        </button>
-
-        {exclusivePosts.length > 0 && (
+      {/* Navigation Content Tabs (Publicaciones, Vídeos, Directos, Opiniones, Sobre mí) */}
+      <div className="flex border-b border-white/10 mt-6 px-3 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'publicaciones', label: 'Publicaciones' },
+          { id: 'videos', label: 'Vídeos' },
+          { id: 'directos', label: 'Directos' },
+          { id: 'opiniones', label: 'Opiniones' },
+          { id: 'sobre_mi', label: 'Sobre mí' },
+        ].map((t) => (
           <button
-            onClick={() => setActiveTab('exclusive')}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-              activeTab === 'exclusive'
-                ? 'text-[#D4AF37] border-[#D4AF37]'
-                : 'text-[#F7E7C1]/50 border-transparent hover:text-[#F7E7C1]'
+            key={t.id}
+            onClick={() => setActiveTab(t.id as any)}
+            className={`flex-1 py-3 px-3 text-xs font-semibold whitespace-nowrap transition-all relative ${
+              activeTab === t.id
+                ? 'text-[#F7E7C1] font-bold'
+                : 'text-[#A09BAE] hover:text-[#F7E7C1]'
             }`}
           >
-            Arcanos ({exclusivePosts.length})
+            {t.label}
+            {activeTab === t.id && (
+              <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-[#E5B54F] to-transparent shadow-[0_0_8px_#E5B54F]" />
+            )}
           </button>
-        )}
-
-        {tar && (
-          <button
-            onClick={() => setActiveTab('reviews')}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-              activeTab === 'reviews'
-                ? 'text-[#D4AF37] border-[#D4AF37]'
-                : 'text-[#F7E7C1]/50 border-transparent hover:text-[#F7E7C1]'
-            }`}
-          >
-            Oráculo ({profileReviews.length})
-          </button>
-        )}
+        ))}
       </div>
 
-      {/* Tab Content */}
+      {/* Tabs Content */}
       <div className="p-3">
-        {(activeTab === 'posts' || activeTab === 'exclusive') && (
-          <div className="grid grid-cols-3 gap-1.5">
-            {(activeTab === 'posts' ? profile.posts : exclusivePosts).map(post => (
+        {/* PUBLICACIONES & VÍDEOS: 3-column Grid with play icon overlays */}
+        {(activeTab === 'publicaciones' || activeTab === 'videos') && (
+          <div className="grid grid-cols-3 gap-2">
+            {profile.posts.map((post) => (
               <div
                 key={post.id}
                 onClick={() => setActivePostModal(post)}
-                className="relative aspect-[9/14] rounded-xl overflow-hidden bg-[#1A1026] cursor-pointer group border border-white/5"
+                className="relative aspect-[9/13] rounded-2xl overflow-hidden bg-[#180E28] cursor-pointer group border border-white/5 shadow-md"
               >
                 <img
                   src={post.thumbnailUrl || post.videoUrl}
                   alt={post.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
 
-                {post.isPinned && (
-                  <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-[#D4AF37] text-[#0B0911] text-[9px] font-bold uppercase">
-                    ✦ Fijado
-                  </span>
-                )}
+                {/* Play Button Icon on Bottom Right */}
+                <div className="absolute bottom-2 right-2 w-6 h-6 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white text-[10px]">
+                  <span>▶</span>
+                </div>
 
-                {(post.isPremium || post.isExclusive) && (
-                  <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-[#2E1B47]/90 border border-[#D4AF37] text-[#D4AF37] text-[9px] font-bold">
-                    ☼ {post.priceCoins}
-                  </span>
-                )}
-
-                <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] text-[#F7E7C1]">
-                  <span className="flex items-center gap-0.5 font-bold">
-                    <SacredFlameIcon className="w-3.5 h-3.5 text-[#D4AF37]" filled />
-                    {post.likes}
-                  </span>
-                  <span className="flex items-center gap-0.5 opacity-80">
-                    <CrystalBallIcon className="w-3.5 h-3.5" />
-                    {post.commentsCount}
-                  </span>
+                {/* Likes indicator on bottom left */}
+                <div className="absolute bottom-2 left-2 text-[10px] text-white/90 font-semibold flex items-center gap-1">
+                  <span>♥</span>
+                  <span>{post.likes}</span>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {activeTab === 'reviews' && (
-          <div className="space-y-3 p-2">
+        {/* DIRECTOS */}
+        {activeTab === 'directos' && (
+          <div className="p-6 text-center space-y-3">
+            <span className="material-symbols-outlined text-4xl text-[#E5B54F]">sensors</span>
+            <h3 className="font-cinzel text-sm font-bold text-[#F7E7C1]">Próximos Rituales en Vivo</h3>
+            <p className="text-xs text-[#A09BAE] max-w-xs mx-auto">
+              Luna Astral transmitirá en directo el próximo plenilunio con tiradas interactivas y canalización grupal.
+            </p>
+          </div>
+        )}
+
+        {/* OPINIONES */}
+        {activeTab === 'opiniones' && (
+          <div className="space-y-2.5 p-1">
             {profileReviews.length === 0 ? (
-              <p className="text-center text-xs text-[#F7E7C1]/50 py-10">
-                Aún no hay reseñas verificadas en este templo.
-              </p>
+              <div className="text-center py-8 text-xs text-[#A09BAE]">
+                Aún no hay opiniones públicas registradas en este templo.
+              </div>
             ) : (
-              profileReviews.map(rev => (
+              profileReviews.map((rev) => (
                 <div
                   key={rev.id}
-                  className="p-4 rounded-2xl bg-[#140D21] border border-[#D4AF37]/25 space-y-1.5"
+                  className="p-3.5 rounded-2xl bg-[#160B24] border border-[#E5B54F]/20 space-y-1"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-[#F7E7C1]">{rev.clientName}</span>
-                    <span className="text-xs text-[#D4AF37]">{'★'.repeat(rev.rating)}</span>
+                    <span className="text-xs text-[#E5B54F]">{'★'.repeat(rev.rating)}</span>
                   </div>
-                  <p className="text-xs text-[#F7E7C1]/80 italic">"{rev.comment}"</p>
+                  <p className="text-xs text-[#D8CEF0]/80 italic">"{rev.comment}"</p>
                 </div>
               ))
             )}
           </div>
         )}
+
+        {/* SOBRE MÍ */}
+        {activeTab === 'sobre_mi' && (
+          <div className="p-4 space-y-4 text-xs text-[#D8CEF0] leading-relaxed">
+            <div className="bg-[#160B24] border border-[#E5B54F]/20 rounded-2xl p-4 space-y-2">
+              <h4 className="font-cinzel text-sm font-bold text-[#E5B54F]">Trayectoria Espiritual</h4>
+              <p>
+                Más de una década consagrada a la lectura del Tarot Marsellés y Egipcio, astrología evolutiva y limpiezas energéticas de espacios y auras. Formada en escuelas esotéricas de España e Iberoamérica.
+              </p>
+            </div>
+            <div className="bg-[#160B24] border border-[#E5B54F]/20 rounded-2xl p-4 space-y-2">
+              <h4 className="font-cinzel text-sm font-bold text-[#E5B54F]">Metodología de Consulta</h4>
+              <p>
+                Sesiones cálidas, directas y confidenciales. No juzgo ni sentencio: entrego las llaves y revelaciones que el universo te envía para tomar decisiones en sintonía con tu propósito álmico.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Modal de Seguidores / Siguiendo */}
-      <FollowsListModal
-        isOpen={followsModal.isOpen}
-        userId={profile.id}
-        type={followsModal.type}
-        currentUser={currentUser}
-        onSelectUser={(uid) => {
-          setViewedUserId(uid);
-          if (onSelectUserProfile) onSelectUserProfile(uid);
-        }}
-        onClose={() => {
-          setFollowsModal(prev => ({ ...prev, isOpen: false }));
-          fetchProfile();
-        }}
-      />
-
-      {/* Modal Tráiler de Bienvenida del Vidente */}
-      {showTrailerModal && tar && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
-          onClick={() => setShowTrailerModal(false)}
-        >
-          <div
-            className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden bg-[#0B0911] border-2 border-[#D4AF37] shadow-2xl flex flex-col justify-between"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {profile.posts.find(p => p.mediaType === 'video')?.videoUrl ? (
-              <video
-                src={profile.posts.find(p => p.mediaType === 'video')!.videoUrl}
-                autoPlay
-                loop
-                controls
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            ) : (
-              <img
-                src={profile.coverImage || profile.avatar}
-                alt={tar.professionalName}
-                className="absolute inset-0 w-full h-full object-cover opacity-75"
-              />
-            )}
-            <div className="relative z-10 p-4 bg-gradient-to-b from-black/85 to-transparent flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <img src={profile.avatar} alt="" className="w-9 h-9 rounded-full object-cover border border-[#D4AF37]" />
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37] block">
-                    🎬 Tráiler de Bienvenida
-                  </span>
-                  <span className="font-cinzel text-xs font-bold text-[#F7E7C1]">{tar.professionalName}</span>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowTrailerModal(false)}
-                className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="relative z-10 p-4 bg-gradient-to-t from-black/95 via-black/70 to-transparent space-y-3">
-              <p className="text-xs text-[#F7E7C1]/90 leading-relaxed">{tar.bio || profile.bio}</p>
-              <button
-                onClick={() => {
-                  setShowTrailerModal(false);
-                  onBookConsultation(tar.id);
-                }}
-                className="w-full py-2.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] text-xs font-bold uppercase tracking-wider gold-glow"
-              >
-                🔮 Reservar Consulta Ahora (€{tar.pricePerMinEur.toFixed(2)}/m)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Visor de Aura Destacada */}
-      {activeHighlight && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
-          onClick={() => setActiveHighlight(null)}
-        >
-          <div
-            className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden bg-[#0B0911] border border-[#D4AF37]/40 flex flex-col justify-between"
-            onClick={e => e.stopPropagation()}
-          >
-            <img
-              src={activeHighlight.mediaUrl}
-              alt={activeHighlight.title}
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <div className="relative z-10 p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between">
-              <span className="font-cinzel text-sm font-bold text-[#D4AF37]">
-                ✦ {activeHighlight.title}
-              </span>
-              <button
-                onClick={() => setActiveHighlight(null)}
-                className="w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Reproductor de Publicación de Cuadrícula (Deslizable tipo Reels) */}
-      {activePostModal && (() => {
-        const currentList = activeTab === 'exclusive' ? exclusivePosts : profile.posts;
-        const currentIndex = currentList.findIndex(p => p.id === activePostModal.id);
-        const hasPrev = currentIndex > 0;
-        const hasNext = currentIndex >= 0 && currentIndex < currentList.length - 1;
-
-        return (
-          <div
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
-            onClick={() => setActivePostModal(null)}
-          >
-            <div
-              className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden bg-[#0B0911] border border-[#D4AF37]/40 flex flex-col justify-between"
-              onClick={e => e.stopPropagation()}
+      {/* Post Modal Viewer if clicked */}
+      {activePostModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="relative max-w-sm w-full bg-[#120B1D] rounded-3xl overflow-hidden border border-[#E5B54F]/40 shadow-2xl">
+            <button
+              onClick={() => setActivePostModal(null)}
+              className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
             >
-              {activePostModal.mediaType === 'image' || !activePostModal.videoUrl ? (
-                <img
-                  src={activePostModal.videoUrl || activePostModal.thumbnailUrl}
-                  alt={activePostModal.title}
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-              ) : (
+              ✕
+            </button>
+            <div className="aspect-[9/13] w-full bg-black">
+              {activePostModal.mediaType === 'video' ? (
                 <video
                   src={activePostModal.videoUrl}
-                  poster={activePostModal.thumbnailUrl}
-                  autoPlay
-                  loop
                   controls
-                  playsInline
-                  className="absolute inset-0 w-full h-full object-cover"
+                  autoPlay
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <img
+                  src={activePostModal.thumbnailUrl || activePostModal.videoUrl}
+                  alt={activePostModal.title}
+                  className="w-full h-full object-cover"
                 />
               )}
-              <div className="relative z-10 p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between">
-                <span className="text-xs font-bold text-[#D4AF37]">
-                  ✦ {activePostModal.category} ({currentIndex + 1}/{currentList.length})
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {hasPrev && (
-                    <button
-                      onClick={() => setActivePostModal(currentList[currentIndex - 1])}
-                      className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-[#D4AF37] flex items-center justify-center hover:bg-black"
-                      title="Visión anterior"
-                    >
-                      ▲
-                    </button>
-                  )}
-                  {hasNext && (
-                    <button
-                      onClick={() => setActivePostModal(currentList[currentIndex + 1])}
-                      className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-[#D4AF37] flex items-center justify-center hover:bg-black"
-                      title="Siguiente visión"
-                    >
-                      ▼
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setActivePostModal(null)}
-                    className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-              <div className="relative z-10 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-end justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-[#F7E7C1]">{activePostModal.title}</p>
-                  {activePostModal.description && (
-                    <p className="text-[11px] text-[#F7E7C1]/75 mt-1 line-clamp-2">{activePostModal.description}</p>
-                  )}
-                </div>
-                {onLikeVideo && (
-                  <button
-                    onClick={() => {
-                      onLikeVideo(activePostModal.id);
-                      setActivePostModal(prev => prev ? { ...prev, likes: prev.likes + 1 } : null);
-                    }}
-                    className="flex flex-col items-center gap-0.5 text-[#D4AF37] shrink-0"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-black/60 border border-[#D4AF37]/40 flex items-center justify-center">
-                      <SacredFlameIcon className="w-5 h-5" filled />
-                    </div>
-                    <span className="text-[10px] font-bold">{activePostModal.likes}</span>
-                  </button>
-                )}
-              </div>
+            </div>
+            <div className="p-4 space-y-1">
+              <h4 className="font-cinzel text-sm font-bold text-[#F7E7C1]">{activePostModal.title}</h4>
+              <p className="text-xs text-[#A09BAE]">{activePostModal.description || 'Visión canalizada en KABALY.'}</p>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
+
+      {/* Follows Modal */}
+      <FollowsListModal
+        isOpen={followsModal.isOpen}
+        onClose={() => setFollowsModal({ ...followsModal, isOpen: false })}
+        userId={profile.id}
+        userName={profile.name}
+        type={followsModal.type}
+      />
     </div>
   );
 };
-

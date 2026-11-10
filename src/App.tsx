@@ -459,63 +459,65 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#0B0911] text-[#F7E7C1] font-manrope selection:bg-[#D4AF37] selection:text-[#0B0911] relative overflow-x-hidden">
       {/* Top Navigation */}
-      <Navbar
-        activeCategory={activeCategory}
-        onSelectCategory={(cat) => {
-          setActiveCategory(cat);
-          setActiveTab('feed');
-          setSelectedTarotistaId(null);
-        }}
-        currentUser={currentUser}
-        onOpenAuthModal={() => {
-          setIsGuestExploring(false);
-          setShowAuthModal(true);
-        }}
-        onLogout={handleLogout}
-        onOpenWallet={() => {
-          if (!currentUser) {
+      {(currentUser || isGuestExploring) && !selectedTarotistaId && (
+        <Navbar
+          activeCategory={activeCategory}
+          onSelectCategory={(cat) => {
+            setActiveCategory(cat);
+            setActiveTab('feed');
+            setSelectedTarotistaId(null);
+          }}
+          currentUser={currentUser}
+          onOpenAuthModal={() => {
+            setIsGuestExploring(false);
             setShowAuthModal(true);
-            return;
-          }
-          setActiveTab('profile');
-          setSelectedTarotistaId(null);
-        }}
-        onOpenSearch={() => {
-          setSelectedTarotistaId(null);
-          setActiveTab('explore');
-        }}
-        onOpenAdmin={() => {
-          if (currentUser?.role === 'admin') {
+          }}
+          onLogout={handleLogout}
+          onOpenWallet={() => {
+            if (!currentUser) {
+              setShowAuthModal(true);
+              return;
+            }
             setActiveTab('profile');
             setSelectedTarotistaId(null);
-          }
-        }}
-        onOpenCreatePost={() => setShowCreatePostModal(true)}
-        onOpenAstraAi={() => {
-          setSelectedTarotistaId(null);
-          setActiveTab('astra_ai');
-        }}
-        onOpenNotifications={() => {
-          if (!currentUser) {
-            setShowAuthModal(true);
-            return;
-          }
-          setShowNotificationsDrawer(true);
-        }}
-        onOpenMessages={() => {
-          if (!currentUser) {
-            setShowAuthModal(true);
-            return;
-          }
-          setSelectedTarotistaId(null);
-          setActiveTab('messages');
-        }}
-        unreadMessagesCount={unreadMessagesCount}
-        unreadNotificationsCount={unreadNotificationsCount}
-      />
+          }}
+          onOpenSearch={() => {
+            setSelectedTarotistaId(null);
+            setActiveTab('explore');
+          }}
+          onOpenAdmin={() => {
+            if (currentUser?.role === 'admin') {
+              setActiveTab('profile');
+              setSelectedTarotistaId(null);
+            }
+          }}
+          onOpenCreatePost={() => setShowCreatePostModal(true)}
+          onOpenAstraAi={() => {
+            setSelectedTarotistaId(null);
+            setActiveTab('astra_ai');
+          }}
+          onOpenNotifications={() => {
+            if (!currentUser) {
+              setShowAuthModal(true);
+              return;
+            }
+            setShowNotificationsDrawer(true);
+          }}
+          onOpenMessages={() => {
+            if (!currentUser) {
+              setShowAuthModal(true);
+              return;
+            }
+            setSelectedTarotistaId(null);
+            setActiveTab('messages');
+          }}
+          unreadMessagesCount={unreadMessagesCount}
+          unreadNotificationsCount={unreadNotificationsCount}
+        />
+      )}
 
       {/* Main Body Layout Container */}
-      <div className="pt-16 pb-16 px-2 sm:px-4 max-w-5xl mx-auto min-h-screen">
+      <div className={`${(currentUser || isGuestExploring) && !selectedTarotistaId ? 'pt-16 pb-16 px-2 sm:px-4' : selectedTarotistaId ? 'pt-3 pb-16 px-2 sm:px-4' : 'p-0'} max-w-5xl mx-auto min-h-screen`}>
         {/* VIEW 1: Active 1:1 Consultation Room */}
         {activeConsultation ? (
           <ConsultationRoomView
@@ -984,29 +986,31 @@ export const App: React.FC = () => {
       </div>
 
       {/* Bottom Navigation */}
-      <BottomNav
-        activeTab={activeTab}
-        onSelectTab={(tab) => {
-          if ((tab === 'profile' || tab === 'messages') && !currentUser) {
-            setIsGuestExploring(false);
-            setShowAuthModal(true);
-            return;
-          }
-          setSelectedTarotistaId(null);
-          setActiveConsultationId(null);
-          setActiveTab(tab);
-        }}
-        hasActiveLiveStream={!!activeStream}
-        unreadMessagesCount={unreadMessagesCount}
-        onOpenCreatePost={() => {
-          if (!currentUser) {
-            setShowAuthModal(true);
-            return;
-          }
-          setShowCreatePostModal(true);
-        }}
-        currentUserAvatar={currentUser?.avatar}
-      />
+      {(currentUser || isGuestExploring) && (
+        <BottomNav
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            if ((tab === 'profile' || tab === 'messages') && !currentUser) {
+              setIsGuestExploring(false);
+              setShowAuthModal(true);
+              return;
+            }
+            setSelectedTarotistaId(null);
+            setActiveConsultationId(null);
+            setActiveTab(tab);
+          }}
+          hasActiveLiveStream={!!activeStream}
+          unreadMessagesCount={unreadMessagesCount}
+          onOpenCreatePost={() => {
+            if (!currentUser) {
+              setShowAuthModal(true);
+              return;
+            }
+            setShowCreatePostModal(true);
+          }}
+          currentUserAvatar={currentUser?.avatar}
+        />
+      )}
 
       {/* Modal: Autenticación Real (Login / Registro) */}
       <AuthModal
