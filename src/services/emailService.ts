@@ -482,8 +482,9 @@ export async function sendKabalyEmail(payload: EmailPayload): Promise<{ success:
   if (hasSmtpConfig) {
     try {
       // @ts-ignore
-      const nodemailer = await import('nodemailer');
-      const transporter = nodemailer.createTransporter({
+      const nodemailerMod = await import('nodemailer');
+      const nm = nodemailerMod.default || nodemailerMod;
+      const transporter = nm.createTransport({
         host: process.env.SMTP_HOST,
         port: Number(process.env.SMTP_PORT) || 465,
         secure: Number(process.env.SMTP_PORT) === 465,

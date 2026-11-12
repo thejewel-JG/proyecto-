@@ -40,14 +40,160 @@ export const ConsultationRoomView: React.FC<ConsultationRoomViewProps> = ({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
 
-  // Hardware Pre-flight Check State
+  // Hardware Pre-flight Check & Real WebRTC State
   const [micActive, setMicActive] = useState(true);
   const [camActive, setCamActive] = useState(true);
   const [preflightTested, setPreflightTested] = useState(false);
+  const [hasLocalStream, setHasLocalStream] = useState(false);
+  const [hasRemoteStream, setHasRemoteStream] = useState(false);
+
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const peerConnRef = useRef<RTCPeerConnection | null>(null);
 
   const isClient = currentUser.id === consultation.clientId;
   const isTarotista = !isClient;
+  const targetPeerUserId = isClient ? consultation.tarotistaId : consultation.clientId;
   const pollIntervalRef = useRef<any>(null);
+
+  // Inicializar WebRTC Real (Cámara/Micrófono + STUN Google/Cloudflare + Señalización SSE)
+  useEffect(() => {
+    if (consultation.status !== 'en_curso' || (consultation.type !== 'video' && consultation.type !== 'audio')) {
+      return;
+    }
+
+    let isMounted = true;
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+      ],
+    });
+    peerConnRef.current = pc;
+
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate && targetPeerUserId) {
+        fetch('/api/webrtc/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            consultationId: consultation.id,
+            targetUserId: targetPeerUserId,
+            signalType: 'ice-candidate',
+            signalData: ev.candidate,
+          }),
+        }).catch(() => {});
+      }
+    };
+
+    pc.ontrack = (ev) => {
+      if (ev.streams && ev.streams[0] && remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = ev.streams[0];
+        if (isMounted) setHasRemoteStream(true);
+      }
+    };
+
+    // Solicitar cámara/micrófono local
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({
+          audio: true,
+          video: consultation.type === 'video',
+        })
+        .then(async (stream) => {
+          if (!isMounted) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          localStreamRef.current = stream;
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+          }
+          setHasLocalStream(true);
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+          if (isClient && targetPeerUserId) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            fetch('/api/webrtc/signal', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                consultationId: consultation.id,
+                targetUserId: targetPeerUserId,
+                signalType: 'offer',
+                signalData: offer,
+              }),
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {
+          // Si el usuario deniega permisos o no tiene webcam, continúa con vista avatar
+        });
+    }
+
+    // Escuchar señales WebRTC entrantes por SSE
+    const es = new EventSource('/api/realtime/stream');
+    es.addEventListener('webrtc_signal', async (e: any) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload.consultationId !== consultation.id) return;
+
+        if (payload.signalType === 'offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.signalData));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          fetch('/api/webrtc/signal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              consultationId: consultation.id,
+              targetUserId: payload.fromUserId,
+              signalType: 'answer',
+              signalData: answer,
+            }),
+          }).catch(() => {});
+        } else if (payload.signalType === 'answer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.signalData));
+        } else if (payload.signalType === 'ice-candidate' && payload.signalData) {
+          await pc.addIceCandidate(new RTCIceCandidate(payload.signalData));
+        }
+      } catch {
+        // Ignorar errores de señalización transitorios
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      es.close();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      pc.close();
+    };
+  }, [consultation.status, consultation.type, consultation.id, isClient, targetPeerUserId]);
+
+  const toggleMicTrack = () => {
+    const next = !micActive;
+    setMicActive(next);
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((t) => {
+        t.enabled = next;
+      });
+    }
+  };
+
+  const toggleCamTrack = () => {
+    const next = !camActive;
+    setCamActive(next);
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach((t) => {
+        t.enabled = next;
+      });
+    }
+  };
 
   // 1. Cargar y sincronizar mensajes reales de la sala
   const fetchMessages = useCallback(async () => {
@@ -327,43 +473,66 @@ export const ConsultationRoomView: React.FC<ConsultationRoomViewProps> = ({
 
       {/* Main Call / Video Feed or Chat Area */}
       <main className="flex-1 p-4 overflow-y-auto space-y-3 no-scrollbar">
-        {/* Video Call Simulation Box if type is video */}
-        {consultation.type === 'video' && consultation.status === 'en_curso' && (
-          <div className="w-full h-48 bg-[#1A1026] rounded-2xl border border-[#D4AF37]/30 relative overflow-hidden flex items-center justify-center shadow-2xl mb-4">
-            <img
-              src={isClient ? consultation.tarotistaAvatar : consultation.clientAvatar}
-              alt="Interlocutor"
-              className="w-full h-full object-cover brightness-75"
+        {/* Real WebRTC Video/Audio Call Box */}
+        {(consultation.type === 'video' || consultation.type === 'audio') && consultation.status === 'en_curso' && (
+          <div className="w-full h-56 sm:h-64 bg-[#1A1026] rounded-2xl border border-[#D4AF37]/30 relative overflow-hidden flex items-center justify-center shadow-2xl mb-4">
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className={`w-full h-full object-cover ${hasRemoteStream && consultation.type === 'video' ? 'block' : 'hidden'}`}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-            
-            {/* Self PIP View */}
-            <div className="absolute bottom-3 right-3 w-20 h-28 rounded-xl border-2 border-[#D4AF37] overflow-hidden bg-black shadow-lg">
-              <img src={currentUser.avatar} alt="Yo" className="w-full h-full object-cover" />
-            </div>
+            {(!hasRemoteStream || consultation.type === 'audio') && (
+              <img
+                src={isClient ? consultation.tarotistaAvatar : consultation.clientAvatar}
+                alt="Interlocutor"
+                className="w-full h-full object-cover brightness-75"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+
+            {/* Self PIP View (Real Webcam or Avatar fallback) */}
+            {consultation.type === 'video' && (
+              <div className="absolute bottom-3 right-3 w-24 h-32 rounded-xl border-2 border-[#D4AF37] overflow-hidden bg-black shadow-lg">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className={`w-full h-full object-cover ${hasLocalStream && camActive ? 'block' : 'hidden'}`}
+                />
+                {(!hasLocalStream || !camActive) && (
+                  <img src={currentUser.avatar} alt="Yo" className="w-full h-full object-cover" />
+                )}
+              </div>
+            )}
 
             <div className="absolute top-3 left-3 bg-[#0B0911]/80 backdrop-blur-md px-3 py-1 rounded-full text-[10px] text-[#D4AF37] font-bold flex items-center gap-1.5 border border-[#D4AF37]/30">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              Sala Privada 1:1 Cifrada
+              <span>{hasRemoteStream ? 'WebRTC P2P Conectado (HD)' : 'Sala Privada 1:1 Cifrada (WebRTC Activo)'}</span>
             </div>
 
             <div className="absolute bottom-3 left-3 flex gap-2">
               <button
-                onClick={() => setMicActive(!micActive)}
-                className={`w-8 h-8 rounded-full flex items-center justify-center border text-xs ${
+                onClick={toggleMicTrack}
+                className={`w-9 h-9 rounded-full flex items-center justify-center border text-xs transition-all ${
                   micActive ? 'bg-[#1A1026] border-[#D4AF37] text-[#D4AF37]' : 'bg-red-500 border-red-500 text-white'
                 }`}
+                title={micActive ? 'Silenciar micrófono' : 'Activar micrófono'}
               >
                 <span className="material-symbols-outlined text-sm">{micActive ? 'mic' : 'mic_off'}</span>
               </button>
-              <button
-                onClick={() => setCamActive(!camActive)}
-                className={`w-8 h-8 rounded-full flex items-center justify-center border text-xs ${
-                  camActive ? 'bg-[#1A1026] border-[#D4AF37] text-[#D4AF37]' : 'bg-red-500 border-red-500 text-white'
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">{camActive ? 'videocam' : 'videocam_off'}</span>
-              </button>
+              {consultation.type === 'video' && (
+                <button
+                  onClick={toggleCamTrack}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center border text-xs transition-all ${
+                    camActive ? 'bg-[#1A1026] border-[#D4AF37] text-[#D4AF37]' : 'bg-red-500 border-red-500 text-white'
+                  }`}
+                  title={camActive ? 'Apagar cámara' : 'Encender cámara'}
+                >
+                  <span className="material-symbols-outlined text-sm">{camActive ? 'videocam' : 'videocam_off'}</span>
+                </button>
+              )}
             </div>
           </div>
         )}

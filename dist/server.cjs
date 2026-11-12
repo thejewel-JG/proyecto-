@@ -1917,7 +1917,7 @@ var import_dotenv = __toESM(require("dotenv"), 1);
 var import_express = __toESM(require("express"), 1);
 var import_cookie_parser = __toESM(require("cookie-parser"), 1);
 var import_path3 = __toESM(require("path"), 1);
-var import_fs2 = __toESM(require("fs"), 1);
+var import_fs3 = __toESM(require("fs"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 init_database();
@@ -5548,6 +5548,134 @@ async function withdrawPost(params) {
   };
 }
 
+// src/services/storageService.ts
+var import_fs2 = __toESM(require("fs"), 1);
+var import_crypto7 = __toESM(require("crypto"), 1);
+function parseCloudinaryConfig() {
+  if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET && process.env.CLOUDINARY_CLOUD_NAME !== "TU_CLOUD_NAME") {
+    return {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME.trim(),
+      apiKey: process.env.CLOUDINARY_API_KEY.trim(),
+      apiSecret: process.env.CLOUDINARY_API_SECRET.trim()
+    };
+  }
+  const urlEnv = process.env.CLOUDINARY_URL;
+  if (urlEnv && urlEnv.startsWith("cloudinary://")) {
+    try {
+      const parsed = new URL(urlEnv);
+      return {
+        cloudName: parsed.hostname,
+        apiKey: decodeURIComponent(parsed.username),
+        apiSecret: decodeURIComponent(parsed.password)
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+async function processUploadedMedia(localFilePath, localPublicPath, folder = "kabaly_media") {
+  const config = parseCloudinaryConfig();
+  if (!config) {
+    return {
+      url: localPublicPath,
+      provider: "local"
+    };
+  }
+  try {
+    const timestamp = Math.floor(Date.now() / 1e3).toString();
+    const paramsToSign = `folder=${folder}&timestamp=${timestamp}${config.apiSecret}`;
+    const signature = import_crypto7.default.createHash("sha1").update(paramsToSign).digest("hex");
+    const fileBuffer = await import_fs2.default.promises.readFile(localFilePath);
+    const base64Data = `data:application/octet-stream;base64,${fileBuffer.toString("base64")}`;
+    const formBody = new URLSearchParams();
+    formBody.append("file", base64Data);
+    formBody.append("api_key", config.apiKey);
+    formBody.append("timestamp", timestamp);
+    formBody.append("folder", folder);
+    formBody.append("signature", signature);
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${encodeURIComponent(config.cloudName)}/auto/upload`,
+      {
+        method: "POST",
+        body: formBody
+      }
+    );
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn("[StorageService] Fallo en subida a Cloudinary, usando copia local:", errText);
+      return { url: localPublicPath, provider: "local" };
+    }
+    const result = await response.json();
+    if (result && result.secure_url) {
+      import_fs2.default.promises.unlink(localFilePath).catch(() => {
+      });
+      return {
+        url: result.secure_url,
+        provider: "cloudinary",
+        publicId: result.public_id
+      };
+    }
+  } catch (err) {
+    console.warn("[StorageService] Error conectando con Cloudinary, usando almacenamiento local:", err.message);
+  }
+  return {
+    url: localPublicPath,
+    provider: "local"
+  };
+}
+
+// src/services/realtimeService.ts
+var RealtimeHub = class {
+  constructor() {
+    this.clients = /* @__PURE__ */ new Map();
+  }
+  addClient(connectionId, userId, res) {
+    this.clients.set(connectionId, { id: connectionId, userId, res });
+  }
+  removeClient(connectionId) {
+    this.clients.delete(connectionId);
+  }
+  emitToUser(userId, event, data) {
+    const payload = `event: ${event}
+data: ${JSON.stringify(data)}
+
+`;
+    for (const client of this.clients.values()) {
+      if (client.userId === userId) {
+        try {
+          client.res.write(payload);
+        } catch {
+          this.clients.delete(client.id);
+        }
+      }
+    }
+  }
+  broadcast(event, data) {
+    const payload = `event: ${event}
+data: ${JSON.stringify(data)}
+
+`;
+    for (const client of this.clients.values()) {
+      try {
+        client.res.write(payload);
+      } catch {
+        this.clients.delete(client.id);
+      }
+    }
+  }
+  getOnlineUserIds() {
+    const set = /* @__PURE__ */ new Set();
+    for (const client of this.clients.values()) {
+      if (client.userId && client.userId !== "guest") {
+        set.add(client.userId);
+      }
+    }
+    return Array.from(set);
+  }
+};
+var realtimeHub = new RealtimeHub();
+
 // server.ts
 if (process.env.NODE_ENV !== "test" && !process.env.TEST_RUN) {
   import_dotenv.default.config();
@@ -5575,8 +5703,8 @@ async function createServerApp() {
   app.use((0, import_cookie_parser.default)());
   app.use(attachUserMiddleware);
   const uploadsDir = import_path3.default.join(process.cwd(), "uploads");
-  if (!import_fs2.default.existsSync(uploadsDir)) {
-    import_fs2.default.mkdirSync(uploadsDir, { recursive: true });
+  if (!import_fs3.default.existsSync(uploadsDir)) {
+    import_fs3.default.mkdirSync(uploadsDir, { recursive: true });
   }
   app.use("/uploads", import_express.default.static(uploadsDir));
   app.get("/api/health", (req2, res) => {
@@ -5610,6 +5738,14 @@ async function createServerApp() {
         ip: req2.ip
       });
       setSessionCookie(res, sessionToken);
+      sendKabalyEmail(
+        EmailTemplates.welcomeUser({
+          userName: user.name,
+          userEmail: user.email,
+          role: user.role
+        })
+      ).catch(() => {
+      });
       res.status(201).json({ success: true, user });
     } catch (err) {
       const status = err.status || 500;
@@ -5783,7 +5919,7 @@ async function createServerApp() {
     }
   });
   app.post("/api/upload", requireAuth, (req2, res) => {
-    uploadMediaMiddleware.single("file")(req2, res, (err) => {
+    uploadMediaMiddleware.single("file")(req2, res, async (err) => {
       if (err) {
         const message = err.message || "Error al procesar el archivo.";
         return res.status(400).json({ error: message });
@@ -5792,10 +5928,12 @@ async function createServerApp() {
         return res.status(400).json({ error: "No se ha enviado ning\xFAn archivo multimedia." });
       }
       const isVideo = req2.file.mimetype.startsWith("video");
-      const mediaUrl = `/uploads/${req2.file.filename}`;
+      const localUrl = `/uploads/${req2.file.filename}`;
+      const uploaded = await processUploadedMedia(req2.file.path, localUrl, "kabaly_media");
       res.status(200).json({
         success: true,
-        url: mediaUrl,
+        url: uploaded.url,
+        storageProvider: uploaded.provider,
         type: isVideo ? "video" : "image",
         mediaType: isVideo ? "video" : "image",
         filename: req2.file.filename,
@@ -6019,6 +6157,16 @@ async function createServerApp() {
   app.post("/api/users/:id/follow", requireAuth, async (req2, res) => {
     try {
       const rel = await followUser(req2.user.id, req2.params.id);
+      if (rel.isFollowing && req2.params.id !== req2.user.id) {
+        realtimeHub.emitToUser(req2.params.id, "new_notification", {
+          type: "follow",
+          actorId: req2.user.id,
+          actorName: req2.user.name,
+          actorAvatar: req2.user.avatar,
+          message: `${req2.user.name} ha comenzado a seguir tu camino espiritual.`,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
       res.json({ success: true, ...rel });
     } catch (err) {
       const status = err.status || 500;
@@ -6484,7 +6632,7 @@ async function createServerApp() {
       res.setHeader("Expires", "0");
       if (req2.query.stream === "true" && access.mediaUrl.startsWith("/uploads/")) {
         const localPath = import_path3.default.join(process.cwd(), access.mediaUrl.replace(/^\//, ""));
-        if (import_fs2.default.existsSync(localPath)) {
+        if (import_fs3.default.existsSync(localPath)) {
           return res.sendFile(localPath);
         }
       }
@@ -6886,6 +7034,18 @@ async function createServerApp() {
         clientMessageId,
         attachmentId
       });
+      try {
+        const conv = await getConversationById(req2.params.id, req2.user.id);
+        if (conv && conv.otherParticipant?.id) {
+          realtimeHub.emitToUser(conv.otherParticipant.id, "new_message", {
+            conversationId: req2.params.id,
+            message,
+            senderName: req2.user.name,
+            senderAvatar: req2.user.avatar
+          });
+        }
+      } catch {
+      }
       res.status(201).json({ success: true, message });
     } catch (err) {
       const status = err.status || 500;
@@ -6895,10 +7055,84 @@ async function createServerApp() {
   app.post("/api/conversations/:id/read", requireAuth, async (req2, res) => {
     try {
       const result = await markConversationAsRead(req2.params.id, req2.user.id);
+      try {
+        const conv = await getConversationById(req2.params.id, req2.user.id);
+        if (conv && conv.otherParticipant?.id) {
+          realtimeHub.emitToUser(conv.otherParticipant.id, "messages_read", {
+            conversationId: req2.params.id,
+            readerId: req2.user.id,
+            readAt: (/* @__PURE__ */ new Date()).toISOString()
+          });
+        }
+      } catch {
+      }
       res.json(result);
     } catch (err) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || "Error al marcar como le\xEDda." });
+    }
+  });
+  app.get("/api/realtime/stream", (req2, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+    const userId = req2.user?.id || "guest";
+    const connId = `sse_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    realtimeHub.addClient(connId, userId, res);
+    res.write(`event: connected
+data: ${JSON.stringify({ userId, onlineUsers: realtimeHub.getOnlineUserIds() })}
+
+`);
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(`: heartbeat ${Date.now()}
+
+`);
+      } catch {
+        clearInterval(heartbeat);
+        realtimeHub.removeClient(connId);
+      }
+    }, 25e3);
+    req2.on("close", () => {
+      clearInterval(heartbeat);
+      realtimeHub.removeClient(connId);
+    });
+  });
+  app.post("/api/realtime/typing", requireAuth, async (req2, res) => {
+    try {
+      const { conversationId, targetUserId, isTyping } = req2.body || {};
+      if (targetUserId) {
+        realtimeHub.emitToUser(targetUserId, "user_typing", {
+          conversationId,
+          userId: req2.user.id,
+          userName: req2.user.name,
+          isTyping: !!isTyping
+        });
+      }
+      res.json({ success: true });
+    } catch {
+      res.json({ success: false });
+    }
+  });
+  app.post("/api/webrtc/signal", requireAuth, async (req2, res) => {
+    try {
+      const { consultationId, targetUserId, signalType, signalData } = req2.body || {};
+      if (!targetUserId || !signalType) {
+        return res.status(400).json({ error: "Faltan par\xE1metros de se\xF1alizaci\xF3n WebRTC." });
+      }
+      realtimeHub.emitToUser(targetUserId, "webrtc_signal", {
+        consultationId,
+        fromUserId: req2.user.id,
+        fromUserName: req2.user.name,
+        signalType,
+        signalData,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Error en se\xF1alizaci\xF3n WebRTC." });
     }
   });
   app.post("/api/chat/attachments", requireAuth, uploadPrivateChatMiddleware.single("file"), async (req2, res) => {
@@ -6923,7 +7157,7 @@ async function createServerApp() {
     try {
       const attachInfo = await getChatAttachmentForUser(req2.params.id, req2.user.id);
       const filePath = import_path3.default.join(PRIVATE_CHAT_DIR, attachInfo.filename);
-      if (!import_fs2.default.existsSync(filePath)) {
+      if (!import_fs3.default.existsSync(filePath)) {
         return res.status(404).json({ error: "El archivo adjunto no existe en disco." });
       }
       res.setHeader("Content-Type", attachInfo.mimeType);
@@ -7057,11 +7291,11 @@ async function startServer() {
   } else {
     const distPath = import_path3.default.join(process.cwd(), "dist");
     const indexHtmlPath = import_path3.default.join(distPath, "index.html");
-    if (import_fs2.default.existsSync(distPath)) {
+    if (import_fs3.default.existsSync(distPath)) {
       app.use(import_express.default.static(distPath));
     }
     app.get("*", (req2, res) => {
-      if (import_fs2.default.existsSync(indexHtmlPath)) {
+      if (import_fs3.default.existsSync(indexHtmlPath)) {
         res.sendFile(indexHtmlPath);
       } else {
         res.status(503).send(`

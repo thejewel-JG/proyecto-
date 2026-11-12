@@ -33,6 +33,7 @@ import { CreatePostModal } from './components/CreatePostModal';
 import { MessagesView } from './components/MessagesView';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { PublicUserProfileView } from './components/PublicUserProfileView';
+import { LegalModal, LegalTab } from './components/LegalModal';
 import { SacredFlameIcon, CrystalBallIcon, AstralCompassIcon, SolomonStarIcon } from './components/EsotericIcons';
 
 export const App: React.FC = () => {
@@ -74,6 +75,18 @@ export const App: React.FC = () => {
   const [initialChatUserId, setInitialChatUserId] = useState<string | null>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
   const [dailyCardRevealed, setDailyCardRevealed] = useState<boolean>(false);
+  const [realtimeToast, setRealtimeToast] = useState<{ title: string; body: string } | null>(null);
+  const [deferredPwaPrompt, setDeferredPwaPrompt] = useState<any>(null);
+  const [cookieAccepted, setCookieAccepted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('kabaly_cookies_accepted') === '1';
+    }
+    return false;
+  });
+  const [legalModal, setLegalModal] = useState<{ isOpen: boolean; tab: LegalTab }>({
+    isOpen: false,
+    tab: 'terms',
+  });
   const [initialPostId, setInitialPostId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -81,6 +94,63 @@ export const App: React.FC = () => {
     }
     return null;
   });
+
+  // Capturar evento PWA beforeinstallprompt
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPwaPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // Conexión global en tiempo real (SSE + Notificaciones Push del Navegador)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    const es = new EventSource('/api/realtime/stream');
+
+    es.addEventListener('new_message', (e: any) => {
+      try {
+        const data = JSON.parse(e.data);
+        setUnreadMessagesCount((prev) => prev + 1);
+        const title = `✦ Nuevo susurro de ${data.senderName || 'un alma'}`;
+        const body = data.message?.content || 'Te ha enviado un mensaje privado.';
+        setRealtimeToast({ title, body });
+        setTimeout(() => setRealtimeToast(null), 4500);
+
+        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+          new Notification(title, { body, icon: '/icon.svg' });
+        }
+      } catch {
+        // silencioso
+      }
+    });
+
+    es.addEventListener('new_notification', (e: any) => {
+      try {
+        const data = JSON.parse(e.data);
+        setUnreadNotificationsCount((prev) => prev + 1);
+        const title = '✦ Eco del Cosmos';
+        const body = data.message || 'Nueva interacción en tu templo.';
+        setRealtimeToast({ title, body });
+        setTimeout(() => setRealtimeToast(null), 4500);
+
+        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+          new Notification(title, { body, icon: '/icon.svg' });
+        }
+      } catch {
+        // silencioso
+      }
+    });
+
+    return () => es.close();
+  }, [currentUser]);
 
   // Load state from backend server
   const fetchState = async () => {
@@ -1088,6 +1158,78 @@ export const App: React.FC = () => {
             setSelectedTarotistaId(v.tarotistaId);
           }
         }}
+      />
+
+      {/* Toast en Tiempo Real (SSE) */}
+      {realtimeToast && (
+        <div
+          onClick={() => {
+            setRealtimeToast(null);
+            setActiveTab('messages');
+          }}
+          className="fixed top-16 right-4 z-50 max-w-xs bg-[#160B24]/95 backdrop-blur-xl border border-[#E5B54F] rounded-2xl p-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.8)] cursor-pointer animate-fade-in"
+        >
+          <p className="text-xs font-bold text-[#E5B54F]">{realtimeToast.title}</p>
+          <p className="text-xs text-[#F7E7C1] line-clamp-2 mt-0.5">{realtimeToast.body}</p>
+        </div>
+      )}
+
+      {/* Botón Flotante Instalar App Móvil (PWA) */}
+      {deferredPwaPrompt && (
+        <div className="fixed bottom-16 right-4 z-40">
+          <button
+            onClick={async () => {
+              deferredPwaPrompt.prompt();
+              await deferredPwaPrompt.userChoice;
+              setDeferredPwaPrompt(null);
+            }}
+            className="gold-gradient-btn px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-xl"
+          >
+            <span className="material-symbols-outlined text-sm">install_mobile</span>
+            <span>Instalar App KABALY</span>
+          </button>
+        </div>
+      )}
+
+      {/* Banner de Cookies, RGPD y Enlaces Legales (+18) */}
+      {!cookieAccepted && (
+        <div className="fixed bottom-14 left-0 right-0 z-40 p-3 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto max-w-xl w-full bg-[#140B22]/95 backdrop-blur-xl border border-[#E5B54F]/35 rounded-2xl p-3.5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-[11px] text-[#D8CEF0] leading-snug text-center sm:text-left">
+              <span>✦ KABALY (+18) utiliza cookies técnicas de sesión seguras (RGPD). Consulta nuestras </span>
+              <button
+                onClick={() => setLegalModal({ isOpen: true, tab: 'terms' })}
+                className="text-[#E5B54F] underline font-semibold hover:text-white"
+              >
+                Condiciones
+              </button>
+              <span> y </span>
+              <button
+                onClick={() => setLegalModal({ isOpen: true, tab: 'privacy' })}
+                className="text-[#E5B54F] underline font-semibold hover:text-white"
+              >
+                Privacidad
+              </button>
+              <span>.</span>
+            </div>
+            <button
+              onClick={() => {
+                localStorage.setItem('kabaly_cookies_accepted', '1');
+                setCookieAccepted(true);
+              }}
+              className="gold-gradient-btn px-4 py-1.5 rounded-full text-xs font-bold shrink-0"
+            >
+              Aceptar ✦
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Legal (+18, RGPD, Cookies) */}
+      <LegalModal
+        isOpen={legalModal.isOpen}
+        initialTab={legalModal.tab}
+        onClose={() => setLegalModal({ ...legalModal, isOpen: false })}
       />
     </div>
   );

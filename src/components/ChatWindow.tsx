@@ -49,6 +49,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   // Reporting state
   const [reportingMessage, setReportingMessage] = useState<PrivateChatMessage | null>(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const typingTimeoutRef = useRef<any>(null);
+  const lastTypingEmitRef = useRef<number>(0);
 
   // Scroll ref
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -154,6 +157,82 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   useEffect(() => {
     loadInitialMessages();
   }, [loadInitialMessages]);
+
+  // Conexión en Tiempo Real (SSE) para entrega instantánea, indicador de escritura y doble check
+  useEffect(() => {
+    const es = new EventSource('/api/realtime/stream');
+
+    es.addEventListener('new_message', (e: any) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.conversationId === conversation.id && data.message) {
+          setIsOtherTyping(false);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === data.message.id)) return prev;
+            return [...prev, data.message];
+          });
+          setTimeout(() => {
+            if (messagesContainerRef.current) {
+              messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+            }
+          }, 40);
+          markAsRead();
+        }
+      } catch {
+        // silencioso
+      }
+    });
+
+    es.addEventListener('user_typing', (e: any) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.conversationId === conversation.id && data.userId === otherUser.id) {
+          setIsOtherTyping(!!data.isTyping);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          if (data.isTyping) {
+            typingTimeoutRef.current = setTimeout(() => setIsOtherTyping(false), 3500);
+          }
+        }
+      } catch {
+        // silencioso
+      }
+    });
+
+    es.addEventListener('messages_read', (e: any) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.conversationId === conversation.id) {
+          setMessages((prev) =>
+            prev.map((m) => (m.senderId === currentUser.id ? { ...m, isRead: true } : m))
+          );
+        }
+      } catch {
+        // silencioso
+      }
+    });
+
+    return () => {
+      es.close();
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [conversation.id, otherUser.id, currentUser.id, markAsRead]);
+
+  const handleInputTyping = (val: string) => {
+    setInputText(val);
+    const now = Date.now();
+    if (now - lastTypingEmitRef.current > 2000) {
+      lastTypingEmitRef.current = now;
+      fetch('/api/realtime/typing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          targetUserId: otherUser.id,
+          isTyping: val.trim().length > 0,
+        }),
+      }).catch(() => {});
+    }
+  };
 
   // Smart Polling cada 2.5s mientras la pestaña esté activa
   useEffect(() => {
@@ -525,10 +604,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {otherUser.handle && (
-                <span className="text-[11px] text-[#A09BAE]">{otherUser.handle}</span>
+              {isOtherTyping ? (
+                <span className="text-[10px] text-[#E5B54F] font-semibold animate-pulse">
+                  ✦ escribiendo un susurro...
+                </span>
+              ) : (
+                <>
+                  {otherUser.handle && (
+                    <span className="text-[11px] text-[#A09BAE]">{otherUser.handle}</span>
+                  )}
+                  <span className="text-[9px] text-emerald-400 font-semibold">• En sintonía</span>
+                </>
               )}
-              <span className="text-[9px] text-emerald-400 font-semibold">• En sintonía</span>
             </div>
           </div>
         </div>
@@ -852,7 +939,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           <input
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => handleInputTyping(e.target.value)}
             disabled={isBlockedByMe || hasBlockedMe}
             maxLength={2000}
             placeholder={

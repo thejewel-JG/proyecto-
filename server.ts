@@ -121,6 +121,8 @@ import {
   refundPostUnlock,
   withdrawPost,
 } from './src/services/giftAndUnlockService';
+import { processUploadedMedia } from './src/services/storageService';
+import { realtimeHub } from './src/services/realtimeService';
 
 // Initialize Gemini Client server-side
 const ai = new GoogleGenAI({
@@ -198,6 +200,16 @@ export async function createServerApp() {
       });
 
       setSessionCookie(res, sessionToken);
+
+      // Enviar correo transaccional de bienvenida (no bloqueante)
+      sendKabalyEmail(
+        EmailTemplates.welcomeUser({
+          userName: user.name,
+          userEmail: user.email,
+          role: user.role,
+        })
+      ).catch(() => {});
+
       res.status(201).json({ success: true, user });
     } catch (err: any) {
       const status = err.status || 500;
@@ -401,9 +413,9 @@ export async function createServerApp() {
   // FASE 3: SUBIDA DE ARCHIVOS Y GESTIÓN DE PUBLICACIONES
   // ---------------------------------------------------------------------------
 
-  // 3.1 Subida de fotos y vídeos validados
+  // 3.1 Subida de fotos y vídeos validados (Híbrido: Cloudinary CDN o Local)
   app.post('/api/upload', requireAuth, (req, res) => {
-    uploadMediaMiddleware.single('file')(req, res, (err: any) => {
+    uploadMediaMiddleware.single('file')(req, res, async (err: any) => {
       if (err) {
         const message = err.message || 'Error al procesar el archivo.';
         return res.status(400).json({ error: message });
@@ -414,11 +426,13 @@ export async function createServerApp() {
       }
 
       const isVideo = req.file.mimetype.startsWith('video');
-      const mediaUrl = `/uploads/${req.file.filename}`;
+      const localUrl = `/uploads/${req.file.filename}`;
+      const uploaded = await processUploadedMedia(req.file.path, localUrl, 'kabaly_media');
 
       res.status(200).json({
         success: true,
-        url: mediaUrl,
+        url: uploaded.url,
+        storageProvider: uploaded.provider,
         type: isVideo ? 'video' : 'image',
         mediaType: isVideo ? 'video' : 'image',
         filename: req.file.filename,
@@ -686,6 +700,16 @@ export async function createServerApp() {
   app.post('/api/users/:id/follow', requireAuth, async (req, res) => {
     try {
       const rel = await followUser(req.user!.id, req.params.id);
+      if (rel.isFollowing && req.params.id !== req.user!.id) {
+        realtimeHub.emitToUser(req.params.id, 'new_notification', {
+          type: 'follow',
+          actorId: req.user!.id,
+          actorName: req.user!.name,
+          actorAvatar: req.user!.avatar,
+          message: `${req.user!.name} ha comenzado a seguir tu camino espiritual.`,
+          createdAt: new Date().toISOString(),
+        });
+      }
       res.json({ success: true, ...rel });
     } catch (err: any) {
       const status = err.status || 500;
@@ -1740,6 +1764,21 @@ export async function createServerApp() {
         attachmentId,
       });
 
+      // Emitir mensaje en tiempo real al receptor y actualizar badge
+      try {
+        const conv = await getConversationById(req.params.id, req.user!.id);
+        if (conv && conv.otherParticipant?.id) {
+          realtimeHub.emitToUser(conv.otherParticipant.id, 'new_message', {
+            conversationId: req.params.id,
+            message,
+            senderName: req.user!.name,
+            senderAvatar: req.user!.avatar,
+          });
+        }
+      } catch {
+        // Ignorar si falla emisión en tiempo real
+      }
+
       res.status(201).json({ success: true, message });
     } catch (err: any) {
       const status = err.status || 500;
@@ -1751,10 +1790,95 @@ export async function createServerApp() {
   app.post('/api/conversations/:id/read', requireAuth, async (req, res) => {
     try {
       const result = await markConversationAsRead(req.params.id, req.user!.id);
+      try {
+        const conv = await getConversationById(req.params.id, req.user!.id);
+        if (conv && conv.otherParticipant?.id) {
+          realtimeHub.emitToUser(conv.otherParticipant.id, 'messages_read', {
+            conversationId: req.params.id,
+            readerId: req.user!.id,
+            readAt: new Date().toISOString(),
+          });
+        }
+      } catch {
+        // Ignorar
+      }
       res.json(result);
     } catch (err: any) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || 'Error al marcar como leída.' });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // MOTOR EN TIEMPO REAL (SSE + INDICADOR DE ESCRITURA + SEÑALIZACIÓN WEBRTC)
+  // ---------------------------------------------------------------------------
+  app.get('/api/realtime/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const userId = req.user?.id || 'guest';
+    const connId = `sse_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    realtimeHub.addClient(connId, userId, res);
+
+    //Enviar latido inicial
+    res.write(`event: connected\ndata: ${JSON.stringify({ userId, onlineUsers: realtimeHub.getOnlineUserIds() })}\n\n`);
+
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(`: heartbeat ${Date.now()}\n\n`);
+      } catch {
+        clearInterval(heartbeat);
+        realtimeHub.removeClient(connId);
+      }
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      realtimeHub.removeClient(connId);
+    });
+  });
+
+  // Indicador de "escribiendo..." en tiempo real
+  app.post('/api/realtime/typing', requireAuth, async (req, res) => {
+    try {
+      const { conversationId, targetUserId, isTyping } = req.body || {};
+      if (targetUserId) {
+        realtimeHub.emitToUser(targetUserId, 'user_typing', {
+          conversationId,
+          userId: req.user!.id,
+          userName: req.user!.name,
+          isTyping: !!isTyping,
+        });
+      }
+      res.json({ success: true });
+    } catch {
+      res.json({ success: false });
+    }
+  });
+
+  // Señalización WebRTC 1:1 en tiempo real (Offer, Answer, ICE Candidate)
+  app.post('/api/webrtc/signal', requireAuth, async (req, res) => {
+    try {
+      const { consultationId, targetUserId, signalType, signalData } = req.body || {};
+      if (!targetUserId || !signalType) {
+        return res.status(400).json({ error: 'Faltan parámetros de señalización WebRTC.' });
+      }
+
+      realtimeHub.emitToUser(targetUserId, 'webrtc_signal', {
+        consultationId,
+        fromUserId: req.user!.id,
+        fromUserName: req.user!.name,
+        signalType,
+        signalData,
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error en señalización WebRTC.' });
     }
   });
 
