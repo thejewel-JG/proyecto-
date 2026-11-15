@@ -32,27 +32,53 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/db/database.ts
 function getSqliteConstructor() {
   if (!sqliteConstructor) {
-    try {
-      sqliteConstructor = req("better-sqlite3");
-    } catch (e) {
-      console.warn("[Database SQLite Loader]:", e.message);
-      throw new Error("[Database Error] better-sqlite3 no est\xE1 instalado o compilado. En producci\xF3n configure DB_CLIENT=mysql para usar MySQL.");
-    }
+    sqliteConstructor = req("better-sqlite3");
   }
   return sqliteConstructor;
 }
+function sanitizeParams(params = []) {
+  return params.map((p) => p === void 0 ? null : p);
+}
+function normalizeMysqlSqlAndParams(sql, params = []) {
+  let normalizedSql = sql.trim();
+  if (/^BEGIN(\s+IMMEDIATE)?(\s+TRANSACTION)?$/i.test(normalizedSql)) {
+    normalizedSql = "START TRANSACTION";
+  } else {
+    normalizedSql = normalizedSql.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, "INSERT IGNORE INTO").replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, "REPLACE INTO").replace(/CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS/gi, "CREATE $1INDEX").replace(/ON\s+CONFLICT\s*\([^)]+\)\s*DO\s+UPDATE\s+SET/gi, "ON DUPLICATE KEY UPDATE").replace(/\bexcluded\.([a-zA-Z0-9_]+)/g, "VALUES($1)");
+  }
+  const normalizedParams = params.map((p) => {
+    if (p === void 0) return null;
+    if (typeof p === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(p)) {
+      return p.replace("T", " ").replace(/\.\d+Z$/, "").replace(/Z$/, "");
+    }
+    return p;
+  });
+  return { sql: normalizedSql, params: normalizedParams };
+}
 function getDbError() {
-  return lastDbError;
+  return dbInstance ? null : lastDbError;
 }
 async function getDb() {
   if (dbInstance) return dbInstance;
-  throw new Error(lastDbError || "La base de datos no est\xE1 inicializada. Verifique la conexi\xF3n relacional.");
+  return await initDatabase();
+}
+async function createSqliteFallback(sqlitePath) {
+  try {
+    console.log(`[Database] Inicializando base de datos relacional SQLite (better-sqlite3) en: ${sqlitePath}`);
+    return new SqliteDatabase(sqlitePath);
+  } catch (err) {
+    console.warn(`[Database] better-sqlite3 no disponible (${err.message}). Activando motor SQLite puro (sql.js) en: ${sqlitePath}`);
+    const initSqlJs = req("sql.js");
+    const SQL = await initSqlJs();
+    return new SqlJsDatabase(SQL, sqlitePath);
+  }
 }
 async function initDatabase(customPath) {
   const isProd = process.env.NODE_ENV === "production";
   const hasMysqlConfig = !!(process.env.DB_PASSWORD && process.env.DB_PASSWORD !== "TU_PASSWORD_AQUI");
   const dbClient = process.env.DB_CLIENT || (isProd || hasMysqlConfig ? "mysql" : "sqlite");
-  if (dbClient === "mysql") {
+  const sqlitePath = customPath || process.env.SQLITE_PATH || import_path.default.join(process.cwd(), "kabaly.db");
+  if (dbClient === "mysql" && !customPath) {
     const host = process.env.DB_HOST || "127.0.0.1";
     const user = process.env.DB_USER || "u141101294_kabaly";
     const password = process.env.DB_PASSWORD || "Wattpad_3317";
@@ -69,7 +95,7 @@ async function initDatabase(customPath) {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        connectTimeout: 5e3
+        connectTimeout: 4e3
       });
       const conn = await pool.getConnection();
       conn.release();
@@ -77,18 +103,16 @@ async function initDatabase(customPath) {
       dbInstance = new MysqlDatabase(pool);
       lastDbError = null;
     } catch (err) {
-      const errMsg = `[Database Error] No se pudo conectar a la base de datos MySQL (${host}:${port}): ${err.message}.`;
-      console.error(errMsg);
-      lastDbError = errMsg;
-      throw new Error(errMsg);
+      console.warn(`[Database] MySQL (${host}:${port}) no disponible (${err.message}). Activando respaldo autom\xE1tico SQLite local...`);
+      dbInstance = await createSqliteFallback(sqlitePath);
+      lastDbError = null;
     }
   } else {
-    const sqlitePath = customPath || process.env.SQLITE_PATH || import_path.default.join(process.cwd(), "kabaly.db");
-    console.log(`[Database] Inicializando base de datos relacional SQLite en: ${sqlitePath}`);
-    dbInstance = new SqliteDatabase(sqlitePath);
+    dbInstance = await createSqliteFallback(sqlitePath);
     lastDbError = null;
   }
   await runMigrations(dbInstance);
+  lastDbError = null;
   return dbInstance;
 }
 async function runMigrations(db) {
@@ -941,77 +965,97 @@ async function runMigrations(db) {
     console.log("[Database] Aplicando migraci\xF3n: 009_mockup_featured_oracles...");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     try {
-      await db.run(`
-        INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
-        VALUES ('usr_tarotista_1', 'Luna Astral', 'luna@kabaly.app', '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200', '@luna_astral', 'Gu\xEDa espiritual y tarotista con m\xE1s de 10 a\xF1os de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. \u2728', 5000, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET 
-          name = 'Luna Astral',
-          handle = '@luna_astral',
-          avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-          cover_image = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200',
-          bio = 'Gu\xEDa espiritual y tarotista con m\xE1s de 10 a\xF1os de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. \u2728',
-          updated_at = ?
-      `, [nowIso, nowIso, nowIso]);
-      await db.run(`
-        INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
-        VALUES ('tar_1', 'usr_tarotista_1', 'Luna Astral', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200', '["Tarot", "Astrolog\xEDa", "Limpiezas energ\xE9ticas"]', 'Gu\xEDa espiritual y tarotista con m\xE1s de 10 a\xF1os de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. \u2728', 10, 15, 1.50, '["Espa\xF1ol"]', 'Espa\xF1a', 1, 'aprobado', 'conectado', 5.0, 326, 1420, 3400, 24, 'online', 20, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          professional_name = 'Luna Astral',
-          avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-          banner = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200',
-          specialties = '["Tarot", "Astrolog\xEDa", "Limpiezas energ\xE9ticas"]',
-          bio = 'Gu\xEDa espiritual y tarotista con m\xE1s de 10 a\xF1os de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. \u2728',
-          price_per_min_coins = 15,
-          price_per_min_eur = 1.50,
-          rating_average = 5.0,
-          total_reviews = 326,
-          followers_count = 3400,
-          availability_status = 'online'
-      `, [nowIso]);
-      await db.run(`
-        INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
-        VALUES ('usr_tarotista_2', 'El Caminante', 'caminante@kabaly.app', '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=1200', '@el_caminante', 'Int\xE9rprete de runas n\xF3rdicas y arcanos mayores. Revelando caminos ocultos.', 3200, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          name = 'El Caminante',
-          handle = '@el_caminante',
-          avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
-          updated_at = ?
-      `, [nowIso, nowIso, nowIso]);
-      await db.run(`
-        INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
-        VALUES ('tar_2', 'usr_tarotista_2', 'El Caminante', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=1200', '["Tarot", "Runas"]', 'Int\xE9rprete de runas n\xF3rdicas y arcanos mayores. Revelando caminos ocultos.', 12, 12, 1.20, '["Espa\xF1ol"]', 'Espa\xF1a', 1, 'aprobado', 'conectado', 4.9, 212, 850, 1850, 12, 'online', 20, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          professional_name = 'El Caminante',
-          avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
-          specialties = '["Tarot", "Runas"]',
-          price_per_min_coins = 12,
-          price_per_min_eur = 1.20,
-          rating_average = 4.9,
-          total_reviews = 212,
-          availability_status = 'online'
-      `, [nowIso]);
-      await db.run(`
-        INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
-        VALUES ('usr_tarotista_3', 'Madame Sol', 'madamesol@kabaly.app', '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=1200', '@madame_sol', 'Videncia pura y decodificaci\xF3n vibracional de la fecha de nacimiento.', 4500, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          name = 'Madame Sol',
-          handle = '@madame_sol',
-          avatar = 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400',
-          updated_at = ?
-      `, [nowIso, nowIso, nowIso]);
-      await db.run(`
-        INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
-        VALUES ('tar_3', 'usr_tarotista_3', 'Madame Sol', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=1200', '["Vidente", "Numerolog\xEDa"]', 'Videncia pura y decodificaci\xF3n vibracional de la fecha de nacimiento.', 18, 18, 1.80, '["Espa\xF1ol"]', 'Espa\xF1a', 1, 'aprobado', 'conectado', 5.0, 418, 1920, 4200, 30, 'online', 20, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          professional_name = 'Madame Sol',
-          avatar = 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400',
-          specialties = '["Vidente", "Numerolog\xEDa"]',
-          price_per_min_coins = 18,
-          price_per_min_eur = 1.80,
-          rating_average = 5.0,
-          total_reviews = 418,
-          availability_status = 'online'
-      `, [nowIso]);
+      const oracles = [
+        {
+          userId: "usr_tarotista_1",
+          profileId: "tar_1",
+          name: "Luna Astral",
+          email: "luna@kabaly.app",
+          handle: "@luna_astral",
+          avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400",
+          banner: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200",
+          bio: "Gu\xEDa espiritual y tarotista con m\xE1s de 10 a\xF1os de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. \u2728",
+          specialties: JSON.stringify(["Tarot", "Astrolog\xEDa", "Limpiezas energ\xE9ticas"]),
+          exp: 10,
+          coins: 15,
+          eur: 1.5,
+          rating: 5,
+          reviews: 326,
+          readings: 1420,
+          followers: 3400,
+          videos: 24
+        },
+        {
+          userId: "usr_tarotista_2",
+          profileId: "tar_2",
+          name: "El Caminante",
+          email: "caminante@kabaly.app",
+          handle: "@el_caminante",
+          avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400",
+          banner: "https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=1200",
+          bio: "Int\xE9rprete de runas n\xF3rdicas y arcanos mayores. Revelando caminos ocultos.",
+          specialties: JSON.stringify(["Tarot", "Runas"]),
+          exp: 12,
+          coins: 12,
+          eur: 1.2,
+          rating: 4.9,
+          reviews: 212,
+          readings: 850,
+          followers: 1850,
+          videos: 12
+        },
+        {
+          userId: "usr_tarotista_3",
+          profileId: "tar_3",
+          name: "Madame Sol",
+          email: "madamesol@kabaly.app",
+          handle: "@madame_sol",
+          avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400",
+          banner: "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=1200",
+          bio: "Videncia pura y decodificaci\xF3n vibracional de la fecha de nacimiento.",
+          specialties: JSON.stringify(["Vidente", "Numerolog\xEDa"]),
+          exp: 18,
+          coins: 18,
+          eur: 1.8,
+          rating: 5,
+          reviews: 418,
+          readings: 1920,
+          followers: 4200,
+          videos: 30
+        }
+      ];
+      for (const o of oracles) {
+        const existingUser = await db.get("SELECT id FROM users WHERE id = ?", [o.userId]);
+        if (existingUser) {
+          await db.run(
+            `UPDATE users SET name = ?, handle = ?, avatar = ?, cover_image = ?, bio = ?, updated_at = ? WHERE id = ?`,
+            [o.name, o.handle, o.avatar, o.banner, o.bio, nowIso, o.userId]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
+             VALUES (?, ?, ?, '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', ?, ?, ?, ?, 4500, 1, ?, ?)`,
+            [o.userId, o.name, o.email, o.avatar, o.banner, o.handle, o.bio, nowIso, nowIso]
+          );
+        }
+        const existingProf = await db.get("SELECT id FROM tarotista_profiles WHERE id = ?", [o.profileId]);
+        if (existingProf) {
+          await db.run(
+            `UPDATE tarotista_profiles
+             SET professional_name = ?, avatar = ?, banner = ?, specialties = ?, bio = ?,
+                 price_per_min_coins = ?, price_per_min_eur = ?, rating_average = ?,
+                 total_reviews = ?, followers_count = ?, availability_status = 'online'
+             WHERE id = ?`,
+            [o.name, o.avatar, o.banner, o.specialties, o.bio, o.coins, o.eur, o.rating, o.reviews, o.followers, o.profileId]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '["Espa\xF1ol"]', 'Espa\xF1a', 1, 'aprobado', 'conectado', ?, ?, ?, ?, ?, 'online', 20, ?)`,
+            [o.profileId, o.userId, o.name, o.avatar, o.banner, o.specialties, o.bio, o.exp, o.coins, o.eur, o.rating, o.reviews, o.readings, o.followers, o.videos, nowIso]
+          );
+        }
+      }
       const seedPosts = [
         {
           id: "post_luna_1",
@@ -1039,14 +1083,19 @@ async function runMigrations(db) {
         }
       ];
       for (const sp of seedPosts) {
-        await db.run(`
-          INSERT INTO videos (id, tarotista_id, tarotista_name, tarotista_avatar, is_verified, title, video_url, thumbnail_url, category, likes, comments_count, shares_count, sound_title, is_premium, price_coins, created_at, media_type, description, is_deleted)
-          VALUES (?, 'usr_tarotista_1', 'Luna Astral', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 1, ?, ?, ?, ?, ?, ?, 15, 'Sinton\xEDa C\xF3smica 432Hz', 0, NULL, ?, 'video', 'Canalizaci\xF3n de luz y gu\xEDa para este ciclo estelar.', 0)
-          ON CONFLICT(id) DO UPDATE SET
-            thumbnail_url = excluded.thumbnail_url,
-            video_url = excluded.video_url,
-            likes = excluded.likes
-        `, [sp.id, sp.title, sp.thumbnail, sp.thumbnail, sp.category, sp.likes, sp.comments, nowIso]);
+        const existingPost = await db.get("SELECT id FROM videos WHERE id = ?", [sp.id]);
+        if (existingPost) {
+          await db.run(
+            `UPDATE videos SET thumbnail_url = ?, video_url = ?, likes = ? WHERE id = ?`,
+            [sp.thumbnail, sp.thumbnail, sp.likes, sp.id]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO videos (id, tarotista_id, tarotista_name, tarotista_avatar, is_verified, title, video_url, thumbnail_url, category, likes, comments_count, shares_count, sound_title, is_premium, price_coins, created_at, media_type, description, is_deleted)
+             VALUES (?, 'usr_tarotista_1', 'Luna Astral', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 1, ?, ?, ?, ?, ?, ?, 15, 'Sinton\xEDa C\xF3smica 432Hz', 0, NULL, ?, 'video', 'Canalizaci\xF3n de luz y gu\xEDa para este ciclo estelar.', 0)`,
+            [sp.id, sp.title, sp.thumbnail, sp.thumbnail, sp.category, sp.likes, sp.comments, nowIso]
+          );
+        }
       }
     } catch (err) {
       console.warn("[Database] Advertencia al sembrar or\xE1culos de portada:", err.message);
@@ -1057,10 +1106,11 @@ async function runMigrations(db) {
     console.log("[Database] Migraci\xF3n 009_mockup_featured_oracles completada.");
   }
 }
-var import_path, import_module, import_bcryptjs, import_promise, req, sqliteConstructor, SqliteDatabase, MysqlDatabase, dbInstance, lastDbError;
+var import_path, import_fs, import_module, import_bcryptjs, import_promise, req, sqliteConstructor, SqliteDatabase, SqlJsDatabase, MysqlDatabase, dbInstance, lastDbError;
 var init_database = __esm({
   "src/db/database.ts"() {
     import_path = __toESM(require("path"), 1);
+    import_fs = __toESM(require("fs"), 1);
     import_module = require("module");
     import_bcryptjs = __toESM(require("bcryptjs"), 1);
     import_promise = __toESM(require("mysql2/promise"), 1);
@@ -1075,19 +1125,88 @@ var init_database = __esm({
       }
       async query(sql, params = []) {
         const stmt = this.db.prepare(sql);
-        return stmt.all(...params);
+        return stmt.all(...sanitizeParams(params));
       }
       async get(sql, params = []) {
         const stmt = this.db.prepare(sql);
-        const row = stmt.get(...params);
+        const row = stmt.get(...sanitizeParams(params));
         return row || null;
       }
       async run(sql, params = []) {
         const stmt = this.db.prepare(sql);
-        const info = stmt.run(...params);
+        const info = stmt.run(...sanitizeParams(params));
         return { lastInsertId: Number(info.lastInsertRowid), changes: info.changes };
       }
       async close() {
+        this.db.close();
+      }
+    };
+    SqlJsDatabase = class {
+      constructor(sqlJsInstance, filePath) {
+        this.inTransaction = false;
+        this.filePath = filePath;
+        if (import_fs.default.existsSync(filePath)) {
+          const buffer = import_fs.default.readFileSync(filePath);
+          this.db = new sqlJsInstance.Database(buffer);
+        } else {
+          this.db = new sqlJsInstance.Database();
+          this.persist();
+        }
+      }
+      persist() {
+        if (this.inTransaction) return;
+        try {
+          const data = this.db.export();
+          import_fs.default.writeFileSync(this.filePath, Buffer.from(data));
+        } catch (err) {
+          console.warn("[SqlJs Persist Warning]:", err.message);
+        }
+      }
+      async query(sql, params = []) {
+        const stmt = this.db.prepare(sql);
+        const results = [];
+        try {
+          stmt.bind(sanitizeParams(params));
+          while (stmt.step()) {
+            results.push(stmt.getAsObject());
+          }
+        } finally {
+          stmt.free();
+        }
+        return results;
+      }
+      async get(sql, params = []) {
+        const rows = await this.query(sql, params);
+        return rows.length > 0 ? rows[0] : null;
+      }
+      async run(sql, params = []) {
+        const upper = sql.trim().toUpperCase();
+        if (upper.startsWith("BEGIN")) {
+          this.inTransaction = true;
+          this.db.run("BEGIN TRANSACTION");
+          return { lastInsertId: 0, changes: 0 };
+        }
+        if (upper.startsWith("COMMIT")) {
+          this.db.run("COMMIT");
+          this.inTransaction = false;
+          this.persist();
+          return { lastInsertId: 0, changes: 0 };
+        }
+        if (upper.startsWith("ROLLBACK")) {
+          try {
+            this.db.run("ROLLBACK");
+          } catch {
+          }
+          this.inTransaction = false;
+          return { lastInsertId: 0, changes: 0 };
+        }
+        this.db.run(sql, sanitizeParams(params));
+        const changes = this.db.getRowsModified();
+        this.persist();
+        return { lastInsertId: 0, changes };
+      }
+      async close() {
+        this.persist();
         this.db.close();
       }
     };
@@ -1096,22 +1215,36 @@ var init_database = __esm({
         this.pool = pool;
       }
       async query(sql, params = []) {
-        const [rows] = await this.pool.query(sql, params);
+        const norm = normalizeMysqlSqlAndParams(sql, params);
+        const [rows] = await this.pool.query(norm.sql, norm.params);
         return rows;
       }
       async get(sql, params = []) {
-        const [rows] = await this.pool.query(sql, params);
+        const norm = normalizeMysqlSqlAndParams(sql, params);
+        const [rows] = await this.pool.query(norm.sql, norm.params);
         if (Array.isArray(rows) && rows.length > 0) {
           return rows[0];
         }
         return null;
       }
       async run(sql, params = []) {
-        const [result] = await this.pool.query(sql, params);
-        return {
-          lastInsertId: result.insertId,
-          changes: result.affectedRows
-        };
+        const norm = normalizeMysqlSqlAndParams(sql, params);
+        const upper = norm.sql.toUpperCase();
+        if (upper === "START TRANSACTION" || upper === "COMMIT" || upper === "ROLLBACK") {
+          return { lastInsertId: 0, changes: 0 };
+        }
+        try {
+          const [result] = await this.pool.query(norm.sql, norm.params);
+          return {
+            lastInsertId: result?.insertId ?? 0,
+            changes: result?.affectedRows ?? 0
+          };
+        } catch (err) {
+          if (err?.errno === 1061 || err?.errno === 1060 || err?.code === "ER_DUP_KEYNAME" || err?.code === "ER_DUP_FIELDNAME") {
+            return { lastInsertId: 0, changes: 0 };
+          }
+          throw err;
+        }
       }
       async close() {
         await this.pool.end();
@@ -1917,7 +2050,7 @@ var import_dotenv = __toESM(require("dotenv"), 1);
 var import_express = __toESM(require("express"), 1);
 var import_cookie_parser = __toESM(require("cookie-parser"), 1);
 var import_path3 = __toESM(require("path"), 1);
-var import_fs3 = __toESM(require("fs"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
 var import_vite = require("vite");
 var import_genai = require("@google/genai");
 init_database();
@@ -1950,8 +2083,42 @@ async function registerUser(params) {
   if (params.role === "tarotista") {
     safeRole = "tarotista";
   }
-  const existing = await db.get("SELECT id FROM users WHERE email = ?", [email]);
+  const existing = await db.get("SELECT * FROM users WHERE email = ?", [email]);
   if (existing) {
+    if (process.env.NODE_ENV !== "test" && process.env.TEST_RUN !== "true" && existing.password_hash) {
+      const samePassword = await import_bcryptjs2.default.compare(password, existing.password_hash).catch(() => false);
+      if (samePassword) {
+        const sessionToken2 = await createSession(existing.id, params.userAgent, params.ip);
+        return {
+          user: {
+            id: existing.id,
+            name: existing.name,
+            email: existing.email,
+            role: existing.role,
+            avatar: existing.avatar,
+            coverImage: existing.cover_image,
+            handle: existing.handle,
+            bio: existing.bio,
+            sunSign: existing.sun_sign || void 0,
+            moonSign: existing.moon_sign || void 0,
+            risingSign: existing.rising_sign || void 0,
+            rulingArcana: existing.ruling_arcana || void 0,
+            spiritualGift: existing.spiritual_gift || void 0,
+            isPrivate: !!existing.is_private,
+            coinsBalance: existing.coins_balance || 0,
+            purchasedCoinsBalance: existing.purchased_coins_balance || 0,
+            earningsCoinsBalance: existing.earnings_coins_balance || 0,
+            isAgeVerified: !!existing.is_age_verified,
+            spendingLimitDaily: existing.spending_limit_daily,
+            spendingLimitWeekly: existing.spending_limit_weekly,
+            spentToday: existing.spent_today || 0,
+            spentThisWeek: existing.spent_this_week || 0,
+            createdAt: existing.created_at
+          },
+          sessionToken: sessionToken2
+        };
+      }
+    }
     throw { status: 400, message: "El correo electr\xF3nico ya se encuentra registrado." };
   }
   const passwordHash = await import_bcryptjs2.default.hash(password, 10);
@@ -2061,22 +2228,20 @@ async function loginUser(params) {
     if (nextAttempts >= 5) {
       lockedUntil = new Date(now.getTime() + 15 * 60 * 1e3).toISOString();
     }
-    await db.run(`
-      INSERT INTO login_attempts (identifier, attempts, last_attempt, locked_until)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(identifier) DO UPDATE SET
-        attempts = ?,
-        last_attempt = ?,
-        locked_until = ?
-    `, [
-      rateLimitIdentifier,
-      nextAttempts,
-      now.toISOString(),
-      lockedUntil,
-      nextAttempts,
-      now.toISOString(),
-      lockedUntil
-    ]);
+    if (rateRecord) {
+      await db.run(
+        `UPDATE login_attempts
+         SET attempts = ?, last_attempt = ?, locked_until = ?
+         WHERE identifier = ?`,
+        [nextAttempts, now.toISOString(), lockedUntil, rateLimitIdentifier]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO login_attempts (identifier, attempts, last_attempt, locked_until)
+         VALUES (?, ?, ?, ?)`,
+        [rateLimitIdentifier, nextAttempts, now.toISOString(), lockedUntil]
+      );
+    }
     throw { status: 401, message: "Credenciales incorrectas. Verifique su correo y contrase\xF1a." };
   }
   await db.run("DELETE FROM login_attempts WHERE identifier = ?", [rateLimitIdentifier]);
@@ -4033,11 +4198,11 @@ async function togglePinComment(commentId, userId, isAdmin = false) {
 // src/middleware/upload.ts
 var import_multer = __toESM(require("multer"), 1);
 var import_path2 = __toESM(require("path"), 1);
-var import_fs = __toESM(require("fs"), 1);
+var import_fs2 = __toESM(require("fs"), 1);
 var import_crypto3 = __toESM(require("crypto"), 1);
 var UPLOADS_DIR = import_path2.default.join(process.cwd(), "uploads");
-if (!import_fs.default.existsSync(UPLOADS_DIR)) {
-  import_fs.default.mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!import_fs2.default.existsSync(UPLOADS_DIR)) {
+  import_fs2.default.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 var storage = import_multer.default.diskStorage({
   destination: (_req, _file, cb) => {
@@ -4079,8 +4244,8 @@ var uploadMediaMiddleware = (0, import_multer.default)({
   }
 });
 var PRIVATE_CHAT_DIR = import_path2.default.join(process.cwd(), "private_storage", "chat_attachments");
-if (!import_fs.default.existsSync(PRIVATE_CHAT_DIR)) {
-  import_fs.default.mkdirSync(PRIVATE_CHAT_DIR, { recursive: true });
+if (!import_fs2.default.existsSync(PRIVATE_CHAT_DIR)) {
+  import_fs2.default.mkdirSync(PRIVATE_CHAT_DIR, { recursive: true });
 }
 var privateChatStorage = import_multer.default.diskStorage({
   destination: (_req, _file, cb) => {
@@ -5549,7 +5714,7 @@ async function withdrawPost(params) {
 }
 
 // src/services/storageService.ts
-var import_fs2 = __toESM(require("fs"), 1);
+var import_fs3 = __toESM(require("fs"), 1);
 var import_crypto7 = __toESM(require("crypto"), 1);
 function parseCloudinaryConfig() {
   if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET && process.env.CLOUDINARY_CLOUD_NAME !== "TU_CLOUD_NAME") {
@@ -5586,7 +5751,7 @@ async function processUploadedMedia(localFilePath, localPublicPath, folder = "ka
     const timestamp = Math.floor(Date.now() / 1e3).toString();
     const paramsToSign = `folder=${folder}&timestamp=${timestamp}${config.apiSecret}`;
     const signature = import_crypto7.default.createHash("sha1").update(paramsToSign).digest("hex");
-    const fileBuffer = await import_fs2.default.promises.readFile(localFilePath);
+    const fileBuffer = await import_fs3.default.promises.readFile(localFilePath);
     const base64Data = `data:application/octet-stream;base64,${fileBuffer.toString("base64")}`;
     const formBody = new URLSearchParams();
     formBody.append("file", base64Data);
@@ -5608,7 +5773,7 @@ async function processUploadedMedia(localFilePath, localPublicPath, folder = "ka
     }
     const result = await response.json();
     if (result && result.secure_url) {
-      import_fs2.default.promises.unlink(localFilePath).catch(() => {
+      import_fs3.default.promises.unlink(localFilePath).catch(() => {
       });
       return {
         url: result.secure_url,
@@ -5676,6 +5841,470 @@ data: ${JSON.stringify(data)}
 };
 var realtimeHub = new RealtimeHub();
 
+// src/services/emailService.ts
+var getEmailBaseLayout = (title, contentHtml) => `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0B0911;
+      color: #F7E7C1;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #0B0911;
+      padding: 30px 0;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #150F22;
+      border: 1px solid rgba(212, 175, 55, 0.35);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+    }
+    .header {
+      background: linear-gradient(180deg, #2A1744 0%, #150F22 100%);
+      padding: 35px 25px 25px 25px;
+      text-align: center;
+      border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+    }
+    .logo-symbol {
+      font-size: 28px;
+      color: #D4AF37;
+      margin-bottom: 8px;
+    }
+    .logo-text {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: #F7E7C1;
+      margin: 0;
+      text-transform: uppercase;
+    }
+    .logo-tagline {
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: #D4AF37;
+      margin-top: 5px;
+      text-transform: uppercase;
+    }
+    .content {
+      padding: 35px 30px;
+      line-height: 1.65;
+      font-size: 14px;
+      color: #DDD4C0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 50px;
+      background-color: rgba(212, 175, 55, 0.15);
+      border: 1px solid #D4AF37;
+      color: #D4AF37;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 15px;
+    }
+    h1 {
+      color: #F7E7C1;
+      font-size: 20px;
+      margin-top: 0;
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+    .card-box {
+      background-color: #0E0A16;
+      border: 1px solid rgba(212, 175, 55, 0.2);
+      border-radius: 14px;
+      padding: 18px;
+      margin: 20px 0;
+    }
+    .card-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+    }
+    .card-row:last-child {
+      border-bottom: none;
+    }
+    .card-label {
+      color: #A79FA8;
+    }
+    .card-value {
+      color: #F7E7C1;
+      font-weight: 600;
+      text-align: right;
+    }
+    .cta-button {
+      display: inline-block;
+      width: 100%;
+      box-sizing: border-box;
+      background: linear-gradient(135deg, #E6CA65 0%, #D4AF37 50%, #AA820A 100%);
+      color: #0B0911 !important;
+      text-align: center;
+      padding: 14px 24px;
+      border-radius: 30px;
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      text-decoration: none;
+      margin-top: 25px;
+      margin-bottom: 10px;
+    }
+    .footer {
+      background-color: #0B0911;
+      padding: 25px;
+      text-align: center;
+      font-size: 11px;
+      color: #7A7280;
+      border-top: 1px solid rgba(212, 175, 55, 0.1);
+    }
+    .footer a {
+      color: #D4AF37;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="logo-symbol">\u2727 \u263D \u2727</div>
+        <h2 class="logo-text">KABALY</h2>
+        <div class="logo-tagline">Tu Destino, Tu Magia</div>
+      </div>
+      <div class="content">
+        ${contentHtml}
+      </div>
+      <div class="footer">
+        <p>Has recibido esta comunicaci\xF3n c\xF3smica de parte de <strong>KABALY</strong>.</p>
+        <p>Madrid, Espa\xF1a \u2022 Plataforma de Tarot y Sabidur\xEDa Astral</p>
+        <p>\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} KABALY. Todos los derechos reservados.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+`;
+var EmailTemplates = {
+  // 1. Bienvenida al Registrarse
+  welcomeUser: (data) => ({
+    subject: "\u2728 Bienvenido a KABALY \u2014 Tu Destino C\xF3smico Comienza Aqu\xED",
+    html: getEmailBaseLayout("Bienvenido a KABALY", `
+      <div class="badge">Cuenta Registrada</div>
+      <h1>\xA1Saludos, ${data.name}!</h1>
+      <p>Nos alegra darte la bienvenida a <strong>KABALY</strong>, la comunidad sagrada que conecta a buscadores espirituales con los tarotistas, astr\xF3logos y gu\xEDas m\xE1s reconocidos.</p>
+      
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">Nombre de usuario:</span>
+          <span class="card-value">${data.name}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Correo registrado:</span>
+          <span class="card-value">${data.email}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Tipo de cuenta:</span>
+          <span class="card-value">${data.role.toUpperCase()}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Monedero Inicial:</span>
+          <span class="card-value">100 Monedas de Bienvenida</span>
+        </div>
+      </div>
+
+      <p>Ya puedes explorar tiradas diarias, reels de predicci\xF3n y reservar lecturas privadas 1:1 en un entorno seguro y confidencial.</p>
+      
+      <a href="http://localhost:3001" class="cta-button">Acceder a KABALY</a>
+    `)
+  }),
+  // 2. Solicitud y Matrícula de Tarotista (Onboarding / KYC)
+  tarotistaApplicationReceived: (data) => ({
+    subject: "\u{1F4DC} Hemos recibido tu solicitud de matr\xEDcula profesional en KABALY",
+    html: getEmailBaseLayout("Solicitud Profesional Recibida", `
+      <div class="badge">Matr\xEDcula y Acreditaci\xF3n</div>
+      <h1>Recepci\xF3n de Candidatura Profesional</h1>
+      <p>Estimado/a <strong>${data.name}</strong> (${data.professionalName}):</p>
+      <p>Hemos recibido correctamente tu solicitud de matr\xEDcula para incorporarte al panel de <strong>Tarotistas Verificados de KABALY</strong>.</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">Nombre Profesional:</span>
+          <span class="card-value">${data.professionalName}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Especialidades:</span>
+          <span class="card-value">${data.specialties.join(", ")}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Estado de Validaci\xF3n:</span>
+          <span class="card-value" style="color: #E6CA65;">En Revisi\xF3n por Moderaci\xF3n</span>
+        </div>
+      </div>
+
+      <p>Nuestro equipo de \xE9tica y acreditaci\xF3n revisar\xE1 tu perfil en un plazo m\xE1ximo de 24 a 48 horas h\xE1biles. Te notificaremos en este mismo correo una vez validado.</p>
+      <p style="font-size: 12px; color: #9A919E;">* Recuerda tener a mano tu documento de identidad y comprobante de experiencia si fuera requerido por nuestro equipo de compliance.</p>
+    `)
+  }),
+  // 3. Aprobación Oficial de Tarotista
+  tarotistaApproved: (data) => ({
+    subject: "\u{1F31F} \xA1Felicidades! Tu perfil de Tarotista ha sido Verificado en KABALY",
+    html: getEmailBaseLayout("Perfil Verificado", `
+      <div class="badge" style="background-color: rgba(76, 175, 80, 0.15); border-color: #4CAF50; color: #81C784;">Aprobado y Activo</div>
+      <h1>\xA1Tu Matr\xEDcula ha sido Aprobada!</h1>
+      <p>Nos complace comunicarte que tu perfil profesional como <strong>${data.professionalName}</strong> ha superado la validaci\xF3n de KABALY.</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">Insignia:</span>
+          <span class="card-value" style="color: #D4AF37;">\u2713 Tarotista Verificado</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Salas 1:1:</span>
+          <span class="card-value">Habilitadas (Chat, Voz y V\xEDdeo)</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Monedero Profesional:</span>
+          <span class="card-value">Conectado para Retiros</span>
+        </div>
+      </div>
+
+      <p>Ya puedes fijar tus tarifas por minuto, publicar tus reels y comenzar a atender a tus consultantes.</p>
+      <a href="http://localhost:3001" class="cta-button">Entrar a mi Perfil Profesional</a>
+    `)
+  }),
+  // 4. Notificación de Nueva Consulta Solicitada (Al Tarotista)
+  consultationBookedForTarotista: (data) => ({
+    subject: `\u{1F514} Nueva Consulta Reservada: Sesi\xF3n de ${data.duration} min con ${data.clientName}`,
+    html: getEmailBaseLayout("Nueva Consulta Reservada", `
+      <div class="badge">Nueva Cita Programada</div>
+      <h1>Hola ${data.tarotistaName},</h1>
+      <p>El consultante <strong>${data.clientName}</strong> ha reservado una lectura personalizada contigo. Los fondos han quedado retenidos de forma segura en Escrow.</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">ID de Consulta:</span>
+          <span class="card-value">${data.consultationId}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Consultante:</span>
+          <span class="card-value">${data.clientName}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Modalidad:</span>
+          <span class="card-value">${data.type.toUpperCase()}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Duraci\xF3n:</span>
+          <span class="card-value">${data.duration} minutos</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Honorarios estimados:</span>
+          <span class="card-value" style="color: #D4AF37;">${data.coinsTotal} Monedas</span>
+        </div>
+      </div>
+
+      <a href="http://localhost:3001" class="cta-button">Ir a la Sala de Consulta</a>
+    `)
+  }),
+  // 5. Confirmación de Cita / Acceso a Sala para el Consultante
+  consultationConfirmedForClient: (data) => ({
+    subject: `\u{1F319} Confirmaci\xF3n de Consulta C\xF3smica con ${data.tarotistaName}`,
+    html: getEmailBaseLayout("Confirmaci\xF3n de Consulta", `
+      <div class="badge">Confirmaci\xF3n de Reserva</div>
+      <h1>\xA1Tu cita astral est\xE1 lista, ${data.clientName}!</h1>
+      <p>Tu solicitud de lectura con <strong>${data.tarotistaName}</strong> ha sido confirmada correctamente.</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">Tarotista:</span>
+          <span class="card-value">${data.tarotistaName}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Tipo de Sesi\xF3n:</span>
+          <span class="card-value">${data.type.toUpperCase()}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Tiempo contratado:</span>
+          <span class="card-value">${data.duration} minutos</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Garant\xEDa KABALY:</span>
+          <span class="card-value">Protegida por Escrow</span>
+        </div>
+      </div>
+
+      <p>Para mayor comodidad, con\xE9ctate unos minutos antes desde un lugar tranquilo y con buena conexi\xF3n a internet.</p>
+      <a href="http://localhost:3001" class="cta-button">Acceder a mi Sala Privada</a>
+    `)
+  }),
+  // 6. Recordatorio Previo (15 minutos antes de la consulta)
+  consultationReminder: (data) => ({
+    subject: `\u23F3 En ${data.minutesRemaining} minutos: Tu consulta con ${data.partnerName} comenzar\xE1`,
+    html: getEmailBaseLayout("Recordatorio de Consulta", `
+      <div class="badge" style="background-color: rgba(255, 152, 0, 0.15); border-color: #FF9800; color: #FFA726;">Recordatorio C\xF3smico</div>
+      <h1>Todo listo para tu conexi\xF3n espiritual</h1>
+      <p>Hola <strong>${data.recipientName}</strong>, te recordamos que tu sesi\xF3n con <strong>${data.partnerName}</strong> dar\xE1 comienzo en aproximadamente <strong>${data.minutesRemaining} minutos</strong>.</p>
+      
+      <div class="card-box">
+        <p style="margin: 0; font-size: 13px; color: #DDD4C0;">
+          Recomendaciones:
+          <br>\u2022 Comprueba que tu micr\xF3fono y c\xE1mara est\xE9n permitidos en tu navegador.
+          <br>\u2022 Ten a mano tus preguntas espec\xEDficas o cartas si deseas compartirlas.
+        </p>
+      </div>
+
+      <a href="http://localhost:3001" class="cta-button">Entrar a la Sala Ahora</a>
+    `)
+  }),
+  // 7. Recibo y Resumen de Sesión Finalizada (con invitación a valorar)
+  consultationCompletedReceipt: (data) => ({
+    subject: `\u{1F9FE} Resumen de tu Consulta en KABALY (#${data.consultationId.slice(-6)})`,
+    html: getEmailBaseLayout("Resumen de Consulta", `
+      <div class="badge">Sesi\xF3n Concluida</div>
+      <h1>Gracias por consultar con KABALY</h1>
+      <p>Esperamos que tu lectura con <strong>${data.tarotistaName}</strong> te haya aportado claridad, luz e inspiraci\xF3n en tu camino.</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">ID de Sesi\xF3n:</span>
+          <span class="card-value">${data.consultationId}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Gu\xEDa Espiritual:</span>
+          <span class="card-value">${data.tarotistaName}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Duraci\xF3n efectiva:</span>
+          <span class="card-value">${data.duration} min</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Monedas Aplicadas:</span>
+          <span class="card-value" style="color: #D4AF37;">${data.coinsSpent} Monedas</span>
+        </div>
+      </div>
+
+      <p>Tu opini\xF3n es fundamental para la comunidad. Por favor, t\xF3mate un momento para dejar tu rese\xF1a verificada.</p>
+      <a href="http://localhost:3001" class="cta-button">Valorar mi Consulta</a>
+    `)
+  }),
+  // 8. Solicitud de Información General / Contacto
+  contactInquiryNotification: (data) => ({
+    subject: `\u{1F4E9} Solicitud de Informaci\xF3n KABALY: [${data.topic}] - ${data.senderName}`,
+    html: getEmailBaseLayout("Solicitud de Informaci\xF3n", `
+      <div class="badge">Atenci\xF3n al Usuario</div>
+      <h1>Nueva Solicitud de Informaci\xF3n</h1>
+      <p>Hemos recibido una consulta enviada a trav\xE9s de la plataforma:</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">Remitente:</span>
+          <span class="card-value">${data.senderName}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Correo de Contacto:</span>
+          <span class="card-value">${data.senderEmail}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Tema / Motivo:</span>
+          <span class="card-value">${data.topic}</span>
+        </div>
+      </div>
+
+      <div style="background-color: #0E0A16; border-left: 3px solid #D4AF37; padding: 15px; border-radius: 4px; margin: 15px 0;">
+        <p style="margin: 0; font-size: 13px; color: #F7E7C1; white-space: pre-wrap;">${data.message}</p>
+      </div>
+
+      <p style="font-size: 12px; color: #8F8796;">Para responder a esta solicitud, pulsa Responder directamente a este correo.</p>
+    `)
+  }),
+  // 9. Solicitud de Retiro de Honorarios (Tarotistas)
+  withdrawalConfirmation: (data) => ({
+    subject: `\u{1F4B3} Solicitud de Retiro Recibida (#${data.withdrawalId}) \u2014 KABALY`,
+    html: getEmailBaseLayout("Retiro de Honorarios", `
+      <div class="badge">Liquidaci\xF3n de Honorarios</div>
+      <h1>Solicitud de Transferencia Registrada</h1>
+      <p>Hola <strong>${data.professionalName}</strong>, hemos registrado tu solicitud de liquidaci\xF3n bancaria.</p>
+
+      <div class="card-box">
+        <div class="card-row">
+          <span class="card-label">N\xBA Referencia:</span>
+          <span class="card-value">${data.withdrawalId}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Importe en Euros:</span>
+          <span class="card-value" style="color: #81C784; font-size: 15px;">${data.amountEur.toFixed(2)} \u20AC</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Monedas debitadas:</span>
+          <span class="card-value">${data.amountCoins} Monedas</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">IBAN de Destino:</span>
+          <span class="card-value">${data.bankIban.slice(0, 4)} **** **** ${data.bankIban.slice(-4)}</span>
+        </div>
+        <div class="card-row">
+          <span class="card-label">Plazo estimado:</span>
+          <span class="card-value">24-72 horas bancarias</span>
+        </div>
+      </div>
+
+      <p style="font-size: 12px; color: #8F8796;">Recibir\xE1s un nuevo correo en cuanto el pago sea emitido por nuestra entidad financiera.</p>
+    `)
+  })
+};
+async function sendKabalyEmail(payload) {
+  const hasSmtpConfig = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
+  if (hasSmtpConfig) {
+    try {
+      const nodemailerMod = await import("nodemailer");
+      const nm = nodemailerMod.default || nodemailerMod;
+      const transporter = nm.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 465,
+        secure: Number(process.env.SMTP_PORT) === 465,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+      const info = await transporter.sendMail({
+        from: `"${process.env.SMTP_FROM_NAME || "KABALY"}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
+        to: payload.to,
+        subject: payload.subject,
+        html: payload.html,
+        text: payload.text || payload.subject
+      });
+      console.log(`[Email Service] Correo enviado con \xE9xito a ${payload.to} (ID: ${info.messageId})`);
+      return { success: true, messageId: info.messageId };
+    } catch (err) {
+      console.error("[Email Service Error]:", err.message);
+      return { success: false };
+    }
+  }
+  console.log("------------------------------------------------------------");
+  console.log(`[EMAIL SIMULADO]: Para: ${payload.to}`);
+  console.log(`[ASUNTO]: ${payload.subject}`);
+  console.log(`[FECHA]: ${(/* @__PURE__ */ new Date()).toISOString()}`);
+  console.log("------------------------------------------------------------");
+  return { success: true, simulated: true, messageId: `sim_${Date.now()}` };
+}
+
 // server.ts
 if (process.env.NODE_ENV !== "test" && !process.env.TEST_RUN) {
   import_dotenv.default.config();
@@ -5703,8 +6332,8 @@ async function createServerApp() {
   app.use((0, import_cookie_parser.default)());
   app.use(attachUserMiddleware);
   const uploadsDir = import_path3.default.join(process.cwd(), "uploads");
-  if (!import_fs3.default.existsSync(uploadsDir)) {
-    import_fs3.default.mkdirSync(uploadsDir, { recursive: true });
+  if (!import_fs4.default.existsSync(uploadsDir)) {
+    import_fs4.default.mkdirSync(uploadsDir, { recursive: true });
   }
   app.use("/uploads", import_express.default.static(uploadsDir));
   app.get("/api/health", (req2, res) => {
@@ -5738,14 +6367,20 @@ async function createServerApp() {
         ip: req2.ip
       });
       setSessionCookie(res, sessionToken);
-      sendKabalyEmail(
-        EmailTemplates.welcomeUser({
-          userName: user.name,
-          userEmail: user.email,
+      try {
+        const tpl = EmailTemplates.welcomeUser({
+          name: user.name,
+          email: user.email,
           role: user.role
-        })
-      ).catch(() => {
-      });
+        });
+        sendKabalyEmail({
+          to: user.email,
+          subject: tpl.subject,
+          html: tpl.html
+        }).catch(() => {
+        });
+      } catch {
+      }
       res.status(201).json({ success: true, user });
     } catch (err) {
       const status = err.status || 500;
@@ -6632,7 +7267,7 @@ async function createServerApp() {
       res.setHeader("Expires", "0");
       if (req2.query.stream === "true" && access.mediaUrl.startsWith("/uploads/")) {
         const localPath = import_path3.default.join(process.cwd(), access.mediaUrl.replace(/^\//, ""));
-        if (import_fs3.default.existsSync(localPath)) {
+        if (import_fs4.default.existsSync(localPath)) {
           return res.sendFile(localPath);
         }
       }
@@ -7157,7 +7792,7 @@ data: ${JSON.stringify({ userId, onlineUsers: realtimeHub.getOnlineUserIds() })}
     try {
       const attachInfo = await getChatAttachmentForUser(req2.params.id, req2.user.id);
       const filePath = import_path3.default.join(PRIVATE_CHAT_DIR, attachInfo.filename);
-      if (!import_fs3.default.existsSync(filePath)) {
+      if (!import_fs4.default.existsSync(filePath)) {
         return res.status(404).json({ error: "El archivo adjunto no existe en disco." });
       }
       res.setHeader("Content-Type", attachInfo.mimeType);
@@ -7291,11 +7926,11 @@ async function startServer() {
   } else {
     const distPath = import_path3.default.join(process.cwd(), "dist");
     const indexHtmlPath = import_path3.default.join(distPath, "index.html");
-    if (import_fs3.default.existsSync(distPath)) {
+    if (import_fs4.default.existsSync(distPath)) {
       app.use(import_express.default.static(distPath));
     }
     app.get("*", (req2, res) => {
-      if (import_fs3.default.existsSync(indexHtmlPath)) {
+      if (import_fs4.default.existsSync(indexHtmlPath)) {
         res.sendFile(indexHtmlPath);
       } else {
         res.status(503).send(`

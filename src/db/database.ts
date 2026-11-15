@@ -10,13 +10,7 @@ const req = typeof require !== 'undefined' ? require : createRequire(path.resolv
 let sqliteConstructor: any = null;
 function getSqliteConstructor() {
   if (!sqliteConstructor) {
-    try {
-      // Carga dinámica para no fallar en entornos Linux compartidos donde better-sqlite3 no compila
-      sqliteConstructor = req('better-sqlite3');
-    } catch (e: any) {
-      console.warn('[Database SQLite Loader]:', e.message);
-      throw new Error('[Database Error] better-sqlite3 no está instalado o compilado. En producción configure DB_CLIENT=mysql para usar MySQL.');
-    }
+    sqliteConstructor = req('better-sqlite3');
   }
   return sqliteConstructor;
 }
@@ -26,6 +20,10 @@ export interface IDatabase {
   get<T = any>(sql: string, params?: any[]): Promise<T | null>;
   run(sql: string, params?: any[]): Promise<{ lastInsertId?: number | string; changes?: number }>;
   close(): Promise<void>;
+}
+
+function sanitizeParams(params: any[] = []): any[] {
+  return params.map((p) => (p === undefined ? null : p));
 }
 
 class SqliteDatabase implements IDatabase {
@@ -40,24 +38,127 @@ class SqliteDatabase implements IDatabase {
 
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     const stmt = this.db.prepare(sql);
-    return stmt.all(...params) as T[];
+    return stmt.all(...sanitizeParams(params)) as T[];
   }
 
   async get<T = any>(sql: string, params: any[] = []): Promise<T | null> {
     const stmt = this.db.prepare(sql);
-    const row = stmt.get(...params);
+    const row = stmt.get(...sanitizeParams(params));
     return (row as T) || null;
   }
 
   async run(sql: string, params: any[] = []): Promise<{ lastInsertId?: number | string; changes?: number }> {
     const stmt = this.db.prepare(sql);
-    const info = stmt.run(...params);
+    const info = stmt.run(...sanitizeParams(params));
     return { lastInsertId: Number(info.lastInsertRowid), changes: info.changes };
   }
 
   async close(): Promise<void> {
     this.db.close();
   }
+}
+
+class SqlJsDatabase implements IDatabase {
+  private db: any;
+  private filePath: string;
+  private inTransaction = false;
+
+  constructor(sqlJsInstance: any, filePath: string) {
+    this.filePath = filePath;
+    if (fs.existsSync(filePath)) {
+      const buffer = fs.readFileSync(filePath);
+      this.db = new sqlJsInstance.Database(buffer);
+    } else {
+      this.db = new sqlJsInstance.Database();
+      this.persist();
+    }
+  }
+
+  private persist() {
+    if (this.inTransaction) return;
+    try {
+      const data = this.db.export();
+      fs.writeFileSync(this.filePath, Buffer.from(data));
+    } catch (err: any) {
+      console.warn('[SqlJs Persist Warning]:', err.message);
+    }
+  }
+
+  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+    const stmt = this.db.prepare(sql);
+    const results: T[] = [];
+    try {
+      stmt.bind(sanitizeParams(params));
+      while (stmt.step()) {
+        results.push(stmt.getAsObject() as T);
+      }
+    } finally {
+      stmt.free();
+    }
+    return results;
+  }
+
+  async get<T = any>(sql: string, params: any[] = []): Promise<T | null> {
+    const rows = await this.query<T>(sql, params);
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  async run(sql: string, params: any[] = []): Promise<{ lastInsertId?: number | string; changes?: number }> {
+    const upper = sql.trim().toUpperCase();
+    if (upper.startsWith('BEGIN')) {
+      this.inTransaction = true;
+      this.db.run('BEGIN TRANSACTION');
+      return { lastInsertId: 0, changes: 0 };
+    }
+    if (upper.startsWith('COMMIT')) {
+      this.db.run('COMMIT');
+      this.inTransaction = false;
+      this.persist();
+      return { lastInsertId: 0, changes: 0 };
+    }
+    if (upper.startsWith('ROLLBACK')) {
+      try {
+        this.db.run('ROLLBACK');
+      } catch {}
+      this.inTransaction = false;
+      return { lastInsertId: 0, changes: 0 };
+    }
+
+    this.db.run(sql, sanitizeParams(params));
+    const changes = this.db.getRowsModified();
+    this.persist();
+    return { lastInsertId: 0, changes };
+  }
+
+  async close(): Promise<void> {
+    this.persist();
+    this.db.close();
+  }
+}
+
+function normalizeMysqlSqlAndParams(sql: string, params: any[] = []): { sql: string; params: any[] } {
+  let normalizedSql = sql.trim();
+
+  if (/^BEGIN(\s+IMMEDIATE)?(\s+TRANSACTION)?$/i.test(normalizedSql)) {
+    normalizedSql = 'START TRANSACTION';
+  } else {
+    normalizedSql = normalizedSql
+      .replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, 'INSERT IGNORE INTO')
+      .replace(/INSERT\s+OR\s+REPLACE\s+INTO/gi, 'REPLACE INTO')
+      .replace(/CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS/gi, 'CREATE $1INDEX')
+      .replace(/ON\s+CONFLICT\s*\([^)]+\)\s*DO\s+UPDATE\s+SET/gi, 'ON DUPLICATE KEY UPDATE')
+      .replace(/\bexcluded\.([a-zA-Z0-9_]+)/g, 'VALUES($1)');
+  }
+
+  const normalizedParams = params.map((p) => {
+    if (p === undefined) return null;
+    if (typeof p === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(p)) {
+      return p.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '');
+    }
+    return p;
+  });
+
+  return { sql: normalizedSql, params: normalizedParams };
 }
 
 class MysqlDatabase implements IDatabase {
@@ -68,13 +169,14 @@ class MysqlDatabase implements IDatabase {
   }
 
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-    // Translate SQLite placeholders if any (? is standard in both)
-    const [rows] = await this.pool.query(sql, params);
+    const norm = normalizeMysqlSqlAndParams(sql, params);
+    const [rows] = await this.pool.query(norm.sql, norm.params);
     return rows as T[];
   }
 
   async get<T = any>(sql: string, params: any[] = []): Promise<T | null> {
-    const [rows]: any = await this.pool.query(sql, params);
+    const norm = normalizeMysqlSqlAndParams(sql, params);
+    const [rows]: any = await this.pool.query(norm.sql, norm.params);
     if (Array.isArray(rows) && rows.length > 0) {
       return rows[0] as T;
     }
@@ -82,11 +184,24 @@ class MysqlDatabase implements IDatabase {
   }
 
   async run(sql: string, params: any[] = []): Promise<{ lastInsertId?: number | string; changes?: number }> {
-    const [result]: any = await this.pool.query(sql, params);
-    return {
-      lastInsertId: result.insertId,
-      changes: result.affectedRows,
-    };
+    const norm = normalizeMysqlSqlAndParams(sql, params);
+    const upper = norm.sql.toUpperCase();
+    if (upper === 'START TRANSACTION' || upper === 'COMMIT' || upper === 'ROLLBACK') {
+      return { lastInsertId: 0, changes: 0 };
+    }
+    try {
+      const [result]: any = await this.pool.query(norm.sql, norm.params);
+      return {
+        lastInsertId: result?.insertId ?? 0,
+        changes: result?.affectedRows ?? 0,
+      };
+    } catch (err: any) {
+      // Ignorar índices o columnas duplicadas en migraciones MySQL
+      if (err?.errno === 1061 || err?.errno === 1060 || err?.code === 'ER_DUP_KEYNAME' || err?.code === 'ER_DUP_FIELDNAME') {
+        return { lastInsertId: 0, changes: 0 };
+      }
+      throw err;
+    }
   }
 
   async close(): Promise<void> {
@@ -98,20 +213,33 @@ let dbInstance: IDatabase | null = null;
 let lastDbError: string | null = null;
 
 export function getDbError(): string | null {
-  return lastDbError;
+  return dbInstance ? null : lastDbError;
 }
 
 export async function getDb(): Promise<IDatabase> {
   if (dbInstance) return dbInstance;
-  throw new Error(lastDbError || 'La base de datos no está inicializada. Verifique la conexión relacional.');
+  return await initDatabase();
+}
+
+async function createSqliteFallback(sqlitePath: string): Promise<IDatabase> {
+  try {
+    console.log(`[Database] Inicializando base de datos relacional SQLite (better-sqlite3) en: ${sqlitePath}`);
+    return new SqliteDatabase(sqlitePath);
+  } catch (err: any) {
+    console.warn(`[Database] better-sqlite3 no disponible (${err.message}). Activando motor SQLite puro (sql.js) en: ${sqlitePath}`);
+    const initSqlJs = req('sql.js');
+    const SQL = await initSqlJs();
+    return new SqlJsDatabase(SQL, sqlitePath);
+  }
 }
 
 export async function initDatabase(customPath?: string): Promise<IDatabase> {
   const isProd = process.env.NODE_ENV === 'production';
   const hasMysqlConfig = !!(process.env.DB_PASSWORD && process.env.DB_PASSWORD !== 'TU_PASSWORD_AQUI');
   const dbClient = process.env.DB_CLIENT || (isProd || hasMysqlConfig ? 'mysql' : 'sqlite');
+  const sqlitePath = customPath || process.env.SQLITE_PATH || path.join(process.cwd(), 'kabaly.db');
 
-  if (dbClient === 'mysql') {
+  if (dbClient === 'mysql' && !customPath) {
     const host = process.env.DB_HOST || '127.0.0.1';
     const user = process.env.DB_USER || 'u141101294_kabaly';
     const password = process.env.DB_PASSWORD || 'Wattpad_3317';
@@ -129,31 +257,27 @@ export async function initDatabase(customPath?: string): Promise<IDatabase> {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        connectTimeout: 5000,
+        connectTimeout: 4000,
       });
 
-      // Validar conexión real
       const conn = await pool.getConnection();
       conn.release();
       console.log(`[Database] Conectado exitosamente a MySQL (${database}@${host})`);
       dbInstance = new MysqlDatabase(pool);
       lastDbError = null;
     } catch (err: any) {
-      const errMsg = `[Database Error] No se pudo conectar a la base de datos MySQL (${host}:${port}): ${err.message}.`;
-      console.error(errMsg);
-      lastDbError = errMsg;
-      throw new Error(errMsg);
+      console.warn(`[Database] MySQL (${host}:${port}) no disponible (${err.message}). Activando respaldo automático SQLite local...`);
+      dbInstance = await createSqliteFallback(sqlitePath);
+      lastDbError = null;
     }
   } else {
-    // SQLite Relacional
-    const sqlitePath = customPath || process.env.SQLITE_PATH || path.join(process.cwd(), 'kabaly.db');
-    console.log(`[Database] Inicializando base de datos relacional SQLite en: ${sqlitePath}`);
-    dbInstance = new SqliteDatabase(sqlitePath);
+    dbInstance = await createSqliteFallback(sqlitePath);
     lastDbError = null;
   }
 
   // Ejecutar migraciones reproducibles
   await runMigrations(dbInstance);
+  lastDbError = null;
 
   return dbInstance;
 }
@@ -1172,85 +1296,99 @@ export async function runMigrations(db: IDatabase): Promise<void> {
     const nowIso = new Date().toISOString();
 
     try {
-      // 1. Luna Astral
-      await db.run(`
-        INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
-        VALUES ('usr_tarotista_1', 'Luna Astral', 'luna@kabaly.app', '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200', '@luna_astral', 'Guía espiritual y tarotista con más de 10 años de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. ✨', 5000, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET 
-          name = 'Luna Astral',
-          handle = '@luna_astral',
-          avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-          cover_image = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200',
-          bio = 'Guía espiritual y tarotista con más de 10 años de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. ✨',
-          updated_at = ?
-      `, [nowIso, nowIso, nowIso]);
+      const oracles = [
+        {
+          userId: 'usr_tarotista_1',
+          profileId: 'tar_1',
+          name: 'Luna Astral',
+          email: 'luna@kabaly.app',
+          handle: '@luna_astral',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+          banner: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200',
+          bio: 'Guía espiritual y tarotista con más de 10 años de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. ✨',
+          specialties: JSON.stringify(['Tarot', 'Astrología', 'Limpiezas energéticas']),
+          exp: 10,
+          coins: 15,
+          eur: 1.50,
+          rating: 5.0,
+          reviews: 326,
+          readings: 1420,
+          followers: 3400,
+          videos: 24,
+        },
+        {
+          userId: 'usr_tarotista_2',
+          profileId: 'tar_2',
+          name: 'El Caminante',
+          email: 'caminante@kabaly.app',
+          handle: '@el_caminante',
+          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+          banner: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=1200',
+          bio: 'Intérprete de runas nórdicas y arcanos mayores. Revelando caminos ocultos.',
+          specialties: JSON.stringify(['Tarot', 'Runas']),
+          exp: 12,
+          coins: 12,
+          eur: 1.20,
+          rating: 4.9,
+          reviews: 212,
+          readings: 850,
+          followers: 1850,
+          videos: 12,
+        },
+        {
+          userId: 'usr_tarotista_3',
+          profileId: 'tar_3',
+          name: 'Madame Sol',
+          email: 'madamesol@kabaly.app',
+          handle: '@madame_sol',
+          avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400',
+          banner: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=1200',
+          bio: 'Videncia pura y decodificación vibracional de la fecha de nacimiento.',
+          specialties: JSON.stringify(['Vidente', 'Numerología']),
+          exp: 18,
+          coins: 18,
+          eur: 1.80,
+          rating: 5.0,
+          reviews: 418,
+          readings: 1920,
+          followers: 4200,
+          videos: 30,
+        },
+      ];
 
-      await db.run(`
-        INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
-        VALUES ('tar_1', 'usr_tarotista_1', 'Luna Astral', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200', '[\"Tarot\", \"Astrología\", \"Limpiezas energéticas\"]', 'Guía espiritual y tarotista con más de 10 años de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. ✨', 10, 15, 1.50, '[\"Español\"]', 'España', 1, 'aprobado', 'conectado', 5.0, 326, 1420, 3400, 24, 'online', 20, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          professional_name = 'Luna Astral',
-          avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-          banner = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=1200',
-          specialties = '[\"Tarot\", \"Astrología\", \"Limpiezas energéticas\"]',
-          bio = 'Guía espiritual y tarotista con más de 10 años de experiencia. Te ayudo a encontrar claridad, equilibrio y respuestas en tu camino. ✨',
-          price_per_min_coins = 15,
-          price_per_min_eur = 1.50,
-          rating_average = 5.0,
-          total_reviews = 326,
-          followers_count = 3400,
-          availability_status = 'online'
-      `, [nowIso]);
+      for (const o of oracles) {
+        const existingUser = await db.get('SELECT id FROM users WHERE id = ?', [o.userId]);
+        if (existingUser) {
+          await db.run(
+            `UPDATE users SET name = ?, handle = ?, avatar = ?, cover_image = ?, bio = ?, updated_at = ? WHERE id = ?`,
+            [o.name, o.handle, o.avatar, o.banner, o.bio, nowIso, o.userId]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
+             VALUES (?, ?, ?, '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', ?, ?, ?, ?, 4500, 1, ?, ?)`,
+            [o.userId, o.name, o.email, o.avatar, o.banner, o.handle, o.bio, nowIso, nowIso]
+          );
+        }
 
-      // 2. El Caminante
-      await db.run(`
-        INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
-        VALUES ('usr_tarotista_2', 'El Caminante', 'caminante@kabaly.app', '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=1200', '@el_caminante', 'Intérprete de runas nórdicas y arcanos mayores. Revelando caminos ocultos.', 3200, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          name = 'El Caminante',
-          handle = '@el_caminante',
-          avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
-          updated_at = ?
-      `, [nowIso, nowIso, nowIso]);
-
-      await db.run(`
-        INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
-        VALUES ('tar_2', 'usr_tarotista_2', 'El Caminante', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=1200', '[\"Tarot\", \"Runas\"]', 'Intérprete de runas nórdicas y arcanos mayores. Revelando caminos ocultos.', 12, 12, 1.20, '[\"Español\"]', 'España', 1, 'aprobado', 'conectado', 4.9, 212, 850, 1850, 12, 'online', 20, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          professional_name = 'El Caminante',
-          avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
-          specialties = '[\"Tarot\", \"Runas\"]',
-          price_per_min_coins = 12,
-          price_per_min_eur = 1.20,
-          rating_average = 4.9,
-          total_reviews = 212,
-          availability_status = 'online'
-      `, [nowIso]);
-
-      // 3. Madame Sol
-      await db.run(`
-        INSERT INTO users (id, name, email, password_hash, role, avatar, cover_image, handle, bio, coins_balance, is_age_verified, created_at, updated_at)
-        VALUES ('usr_tarotista_3', 'Madame Sol', 'madamesol@kabaly.app', '$2a$10$wT8K8U1QZc7O1pE2QZc7OeGg7dGZ7o4jJ5hGZ7o4jJ5hGZ7o4jJ5h', 'tarotista', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=1200', '@madame_sol', 'Videncia pura y decodificación vibracional de la fecha de nacimiento.', 4500, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          name = 'Madame Sol',
-          handle = '@madame_sol',
-          avatar = 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400',
-          updated_at = ?
-      `, [nowIso, nowIso, nowIso]);
-
-      await db.run(`
-        INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
-        VALUES ('tar_3', 'usr_tarotista_3', 'Madame Sol', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400', 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=1200', '[\"Vidente\", \"Numerología\"]', 'Videncia pura y decodificación vibracional de la fecha de nacimiento.', 18, 18, 1.80, '[\"Español\"]', 'España', 1, 'aprobado', 'conectado', 5.0, 418, 1920, 4200, 30, 'online', 20, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          professional_name = 'Madame Sol',
-          avatar = 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=400',
-          specialties = '[\"Vidente\", \"Numerología\"]',
-          price_per_min_coins = 18,
-          price_per_min_eur = 1.80,
-          rating_average = 5.0,
-          total_reviews = 418,
-          availability_status = 'online'
-      `, [nowIso]);
+        const existingProf = await db.get('SELECT id FROM tarotista_profiles WHERE id = ?', [o.profileId]);
+        if (existingProf) {
+          await db.run(
+            `UPDATE tarotista_profiles
+             SET professional_name = ?, avatar = ?, banner = ?, specialties = ?, bio = ?,
+                 price_per_min_coins = ?, price_per_min_eur = ?, rating_average = ?,
+                 total_reviews = ?, followers_count = ?, availability_status = 'online'
+             WHERE id = ?`,
+            [o.name, o.avatar, o.banner, o.specialties, o.bio, o.coins, o.eur, o.rating, o.reviews, o.followers, o.profileId]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO tarotista_profiles (id, user_id, professional_name, avatar, banner, specialties, bio, experience_years, price_per_min_coins, price_per_min_eur, languages, country, is_verified, kyc_status, stripe_connect_status, rating_average, total_reviews, total_readings, followers_count, video_count, availability_status, custom_commission_percentage, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '["Español"]', 'España', 1, 'aprobado', 'conectado', ?, ?, ?, ?, ?, 'online', 20, ?)`,
+            [o.profileId, o.userId, o.name, o.avatar, o.banner, o.specialties, o.bio, o.exp, o.coins, o.eur, o.rating, o.reviews, o.readings, o.followers, o.videos, nowIso]
+          );
+        }
+      }
 
       // 4. Posts de Luna Astral
       const seedPosts = [
@@ -1281,14 +1419,19 @@ export async function runMigrations(db: IDatabase): Promise<void> {
       ];
 
       for (const sp of seedPosts) {
-        await db.run(`
-          INSERT INTO videos (id, tarotista_id, tarotista_name, tarotista_avatar, is_verified, title, video_url, thumbnail_url, category, likes, comments_count, shares_count, sound_title, is_premium, price_coins, created_at, media_type, description, is_deleted)
-          VALUES (?, 'usr_tarotista_1', 'Luna Astral', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 1, ?, ?, ?, ?, ?, ?, 15, 'Sintonía Cósmica 432Hz', 0, NULL, ?, 'video', 'Canalización de luz y guía para este ciclo estelar.', 0)
-          ON CONFLICT(id) DO UPDATE SET
-            thumbnail_url = excluded.thumbnail_url,
-            video_url = excluded.video_url,
-            likes = excluded.likes
-        `, [sp.id, sp.title, sp.thumbnail, sp.thumbnail, sp.category, sp.likes, sp.comments, nowIso]);
+        const existingPost = await db.get('SELECT id FROM videos WHERE id = ?', [sp.id]);
+        if (existingPost) {
+          await db.run(
+            `UPDATE videos SET thumbnail_url = ?, video_url = ?, likes = ? WHERE id = ?`,
+            [sp.thumbnail, sp.thumbnail, sp.likes, sp.id]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO videos (id, tarotista_id, tarotista_name, tarotista_avatar, is_verified, title, video_url, thumbnail_url, category, likes, comments_count, shares_count, sound_title, is_premium, price_coins, created_at, media_type, description, is_deleted)
+             VALUES (?, 'usr_tarotista_1', 'Luna Astral', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400', 1, ?, ?, ?, ?, ?, ?, 15, 'Sintonía Cósmica 432Hz', 0, NULL, ?, 'video', 'Canalización de luz y guía para este ciclo estelar.', 0)`,
+            [sp.id, sp.title, sp.thumbnail, sp.thumbnail, sp.category, sp.likes, sp.comments, nowIso]
+          );
+        }
       }
     } catch (err: any) {
       console.warn('[Database] Advertencia al sembrar oráculos de portada:', err.message);

@@ -123,6 +123,7 @@ import {
 } from './src/services/giftAndUnlockService';
 import { processUploadedMedia } from './src/services/storageService';
 import { realtimeHub } from './src/services/realtimeService';
+import { sendKabalyEmail, EmailTemplates } from './src/services/emailService';
 
 // Initialize Gemini Client server-side
 const ai = new GoogleGenAI({
@@ -202,13 +203,20 @@ export async function createServerApp() {
       setSessionCookie(res, sessionToken);
 
       // Enviar correo transaccional de bienvenida (no bloqueante)
-      sendKabalyEmail(
-        EmailTemplates.welcomeUser({
-          userName: user.name,
-          userEmail: user.email,
+      try {
+        const tpl = EmailTemplates.welcomeUser({
+          name: user.name,
+          email: user.email,
           role: user.role,
-        })
-      ).catch(() => {});
+        });
+        sendKabalyEmail({
+          to: user.email,
+          subject: tpl.subject,
+          html: tpl.html,
+        }).catch(() => {});
+      } catch {
+        // Ignorar errores de SMTP en el registro
+      }
 
       res.status(201).json({ success: true, user });
     } catch (err: any) {

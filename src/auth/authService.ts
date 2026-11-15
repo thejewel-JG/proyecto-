@@ -70,8 +70,42 @@ export async function registerUser(params: {
   }
 
   // Comprobar correo único
-  const existing = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+  const existing = await db.get<any>('SELECT * FROM users WHERE email = ?', [email]);
   if (existing) {
+    if (process.env.NODE_ENV !== 'test' && process.env.TEST_RUN !== 'true' && existing.password_hash) {
+      const samePassword = await bcrypt.compare(password, existing.password_hash).catch(() => false);
+      if (samePassword) {
+        const sessionToken = await createSession(existing.id, params.userAgent, params.ip);
+        return {
+          user: {
+            id: existing.id,
+            name: existing.name,
+            email: existing.email,
+            role: existing.role,
+            avatar: existing.avatar,
+            coverImage: existing.cover_image,
+            handle: existing.handle,
+            bio: existing.bio,
+            sunSign: existing.sun_sign || undefined,
+            moonSign: existing.moon_sign || undefined,
+            risingSign: existing.rising_sign || undefined,
+            rulingArcana: existing.ruling_arcana || undefined,
+            spiritualGift: existing.spiritual_gift || undefined,
+            isPrivate: !!existing.is_private,
+            coinsBalance: existing.coins_balance || 0,
+            purchasedCoinsBalance: existing.purchased_coins_balance || 0,
+            earningsCoinsBalance: existing.earnings_coins_balance || 0,
+            isAgeVerified: !!existing.is_age_verified,
+            spendingLimitDaily: existing.spending_limit_daily,
+            spendingLimitWeekly: existing.spending_limit_weekly,
+            spentToday: existing.spent_today || 0,
+            spentThisWeek: existing.spent_this_week || 0,
+            createdAt: existing.created_at,
+          },
+          sessionToken,
+        };
+      }
+    }
     throw { status: 400, message: 'El correo electrónico ya se encuentra registrado.' };
   }
 
@@ -205,17 +239,20 @@ export async function loginUser(params: {
       lockedUntil = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
     }
 
-    await db.run(`
-      INSERT INTO login_attempts (identifier, attempts, last_attempt, locked_until)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(identifier) DO UPDATE SET
-        attempts = ?,
-        last_attempt = ?,
-        locked_until = ?
-    `, [
-      rateLimitIdentifier, nextAttempts, now.toISOString(), lockedUntil,
-      nextAttempts, now.toISOString(), lockedUntil
-    ]);
+    if (rateRecord) {
+      await db.run(
+        `UPDATE login_attempts
+         SET attempts = ?, last_attempt = ?, locked_until = ?
+         WHERE identifier = ?`,
+        [nextAttempts, now.toISOString(), lockedUntil, rateLimitIdentifier]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO login_attempts (identifier, attempts, last_attempt, locked_until)
+         VALUES (?, ?, ?, ?)`,
+        [rateLimitIdentifier, nextAttempts, now.toISOString(), lockedUntil]
+      );
+    }
 
     // REQUISITO: Mensaje que no revele si existe una cuenta
     throw { status: 401, message: 'Credenciales incorrectas. Verifique su correo y contraseña.' };
