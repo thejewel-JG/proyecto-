@@ -61,6 +61,7 @@ interface UserProfileViewProps {
   onSelectVideo?: (videoId: string) => void;
   onSelectConsultation?: (consultationId: string) => void;
   onViewPublicProfile?: (userId: string) => void;
+  initialSubTab?: 'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras';
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -84,8 +85,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onSelectVideo,
   onSelectConsultation,
   onViewPublicProfile,
+  initialSubTab,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
+  const [activeSubTab, setActiveSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>(initialSubTab || 'publicaciones');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingPost, setEditingPost] = useState<Video | null>(null);
   const [activeGridPost, setActiveGridPost] = useState<Video | null>(null);

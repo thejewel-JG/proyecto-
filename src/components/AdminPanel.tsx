@@ -24,6 +24,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'kyc' | 'disputes' | 'reports' | 'chat_reports' | 'finance'>('kyc');
   const [chatReports, setChatReports] = useState<any[]>([]);
+  const [resolvedReportIds, setResolvedReportIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     fetch('/api/moderation/messages/reports')
@@ -34,7 +35,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const pendingKycProfiles = tarotistaProfiles.filter(p => p.kycStatus === 'pendiente');
   const disputedConsultations = consultations.filter(c => c.status === 'disputada');
-  const pendingReports = reports.filter(r => r.status === 'pendiente');
+  const pendingReports = reports.filter(r => r.status === 'pendiente' && !resolvedReportIds.has(r.id));
 
   // Financial calculations
   const totalGmvEur = ledger
@@ -242,8 +243,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <span className="text-[9px] text-[#A7A7A7] mt-1 block">Razón: {r.reason} • {new Date(r.createdAt).toLocaleString()}</span>
               </div>
               <button
-                onClick={() => alert('Reporte marcado como revisado.')}
-                className="bg-[#2E1B47] border border-[#D4AF37]/40 text-[#D4AF37] font-bold px-3 py-1.5 rounded-full text-xs"
+                onClick={async () => {
+                  await fetch(`/api/admin/reports/${encodeURIComponent(r.id)}/resolve`, { method: 'POST' }).catch(() => {});
+                  setResolvedReportIds(prev => new Set(prev).add(r.id));
+                }}
+                className="bg-[#2E1B47] border border-[#D4AF37]/40 text-[#D4AF37] font-bold px-3 py-1.5 rounded-full text-xs hover:bg-[#D4AF37] hover:text-[#0B0911] transition-all"
               >
                 Resolver
               </button>

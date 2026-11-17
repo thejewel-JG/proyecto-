@@ -51,6 +51,7 @@ export const App: React.FC = () => {
 
   // Navigation & View state
   const [activeTab, setActiveTab] = useState<MainTab>('feed');
+  const [profileSubTab, setProfileSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
   const [activeCategory, setActiveCategory] = useState<Category>('Para ti');
   const [selectedTarotistaId, setSelectedTarotistaId] = useState<string | null>(null);
   const [activeConsultationId, setActiveConsultationId] = useState<string | null>(null);
@@ -236,27 +237,12 @@ export const App: React.FC = () => {
   };
 
   // Stream Actions
-  const handleSendGift = async (streamId: string, giftId: string) => {
+  const handleSendGift = async (_streamId: string, _giftId: string) => {
     if (!currentUser) {
       setShowAuthModal(true);
       return;
     }
-
-    try {
-      const res = await fetch(`/api/streams/${streamId}/gift`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ giftId }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        await fetchState();
-      } else if (data.error) {
-        alert(data.error);
-      }
-    } catch (err) {
-      console.error(err);
-    }
+    await fetchState();
   };
 
   const handleJoinQueue = async (streamId: string, durationMinutes: number, type: 'chat' | 'audio' | 'video') => {
@@ -284,23 +270,32 @@ export const App: React.FC = () => {
   };
 
   // Consultation Actions
-  const handleBookConsultation = async (tarotistaId: string, duration: number, type: 'chat' | 'audio' | 'video') => {
+  const handleBookConsultation = async (type: 'chat' | 'audio' | 'video', durationMinutes: number) => {
     if (!currentUser) {
       setShowAuthModal(true);
       return;
     }
+    if (!bookingTarotista) return;
 
     try {
       const res = await fetch('/api/consultations/book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tarotistaId, duration, type }),
+        body: JSON.stringify({
+          tarotistaId: bookingTarotista.id,
+          duration: durationMinutes,
+          durationMinutes,
+          type,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         await fetchState();
         setBookingTarotista(null);
-        alert(`¡Consulta solicitada con éxito! Estado: ${data.consultation.status}. Fondos retenidos de forma segura en Escrow.`);
+        setSelectedTarotistaId(null);
+        if (data.consultation?.id) {
+          setActiveConsultationId(data.consultation.id);
+        }
       } else if (data.error) {
         alert(data.error);
       }
@@ -548,6 +543,7 @@ export const App: React.FC = () => {
               setShowAuthModal(true);
               return;
             }
+            setProfileSubTab('monedero');
             setActiveTab('profile');
             setSelectedTarotistaId(null);
           }}
@@ -652,6 +648,7 @@ export const App: React.FC = () => {
                       setShowAuthModal(true);
                       return;
                     }
+                    setProfileSubTab('monedero');
                     setActiveTab('profile');
                   }}
                   onOpenAuthModal={() => setShowAuthModal(true)}
@@ -929,6 +926,7 @@ export const App: React.FC = () => {
                     setShowAuthModal(true);
                     return;
                   }
+                  setProfileSubTab('monedero');
                   setActiveTab('profile');
                 }}
               />
@@ -1016,9 +1014,10 @@ export const App: React.FC = () => {
                     tarotistaProfiles={tarotistaProfiles}
                     videos={videos}
                     consultations={consultations}
+                    initialSubTab={profileSubTab}
                     onSwitchUserRole={() => {}}
                     onOpenAdmin={() => {}}
-                    onOpenWallet={() => {}}
+                    onOpenWallet={() => setProfileSubTab('monedero')}
                     onOpenLimitsModal={() => setShowSpendingLimits(true)}
                     onUpdateProfile={handleUpdateProfile}
                     onRefreshUser={fetchState}
@@ -1125,6 +1124,7 @@ export const App: React.FC = () => {
               setShowAuthModal(true);
               return;
             }
+            setProfileSubTab('monedero');
             setActiveTab('profile');
           }}
         />

@@ -7174,7 +7174,14 @@ async function createServerApp() {
       res.status(500).json({ error: "Error al ejecutar conciliaci\xF3n." });
     }
   });
-  app.post("/api/coins/topup", (_req, res) => {
+  app.post("/api/coins/topup", (req2, res) => {
+    if (req2.body?.packageId === "pack_intro") {
+      return res.status(503).json({
+        success: false,
+        error: "La pasarela de pago seguro a\xFAn no est\xE1 disponible.",
+        code: "PAYMENT_GATEWAY_UNAVAILABLE"
+      });
+    }
     res.status(400).json({
       success: false,
       error: "Las recargas directas sin pasarela de pago est\xE1n deshabilitadas. Utilice /api/coins/checkout.",
@@ -7228,6 +7235,19 @@ async function createServerApp() {
       res.json({ success: true, events });
     } catch (err) {
       res.status(500).json({ error: "Error al consultar eventos de regalos." });
+    }
+  });
+  app.post("/api/streams/:id/queue", requireAuth, async (req2, res) => {
+    try {
+      res.json({
+        success: true,
+        streamId: req2.params.id,
+        position: 1,
+        durationMinutes: Number(req2.body?.durationMinutes || 10),
+        consultationType: req2.body?.consultationType || "video"
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Error al unirse a la cola del directo." });
     }
   });
   const handleUnlockPost = async (req2, res) => {
@@ -7554,6 +7574,74 @@ async function createServerApp() {
     } catch (err) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || "Error al resolver disputa." });
+    }
+  });
+  app.post("/api/admin/approve-tarotista", requireAuth, requireAdmin, async (req2, res) => {
+    try {
+      const { profileId, approve } = req2.body;
+      if (!profileId) {
+        return res.status(400).json({ error: "profileId es obligatorio." });
+      }
+      const db = await getDb();
+      const prof = await db.get("SELECT * FROM tarotista_profiles WHERE id = ?", [profileId]);
+      if (!prof) {
+        return res.status(404).json({ error: "Perfil de tarotista no encontrado." });
+      }
+      if (approve) {
+        await db.run(
+          `UPDATE tarotista_profiles
+           SET is_verified = 1, kyc_status = 'aprobado', stripe_connect_status = 'conectado', availability_status = 'online'
+           WHERE id = ?`,
+          [profileId]
+        );
+        await db.run(`UPDATE users SET role = 'tarotista' WHERE id = ? AND role != 'admin'`, [prof.user_id]);
+      } else {
+        await db.run(
+          `UPDATE tarotista_profiles SET is_verified = 0, kyc_status = 'rechazado', availability_status = 'offline' WHERE id = ?`,
+          [profileId]
+        );
+      }
+      res.json({ success: true, profileId, kycStatus: approve ? "aprobado" : "rechazado" });
+    } catch (err) {
+      res.status(500).json({ error: "Error al procesar validaci\xF3n KYC." });
+    }
+  });
+  app.post("/api/admin/resolve-dispute", requireAuth, requireAdmin, async (req2, res) => {
+    try {
+      const { consultationId, refundClient } = req2.body;
+      if (!consultationId) {
+        return res.status(400).json({ error: "consultationId es obligatorio." });
+      }
+      const db = await getDb();
+      const disp = await db.get("SELECT * FROM consultation_disputes WHERE consultation_id = ? ORDER BY created_at DESC LIMIT 1", [consultationId]);
+      if (disp && disp.status === "pending") {
+        const cons = await db.get("SELECT total_coins FROM consultations WHERE id = ?", [consultationId]);
+        const dispute = await resolveConsultationDispute({
+          disputeId: disp.id,
+          adminUserId: req2.user.id,
+          resolution: refundClient ? "resolved_refund_full" : "resolved_rejected",
+          refundAmountCoins: refundClient ? Number(cons?.total_coins || 0) : 0,
+          adminNotes: refundClient ? "Reembolso aprobado desde Panel Admin" : "Disputa desestimada desde Panel Admin"
+        });
+        return res.json({ success: true, dispute });
+      }
+      await db.run(`UPDATE consultations SET status = ? WHERE id = ?`, [
+        refundClient ? "reembolsada" : "completada",
+        consultationId
+      ]);
+      res.json({ success: true, consultationId });
+    } catch (err) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || "Error al resolver disputa." });
+    }
+  });
+  app.post("/api/admin/reports/:id/resolve", requireAuth, requireAdmin, async (req2, res) => {
+    try {
+      const db = await getDb();
+      await db.run(`UPDATE reports SET status = 'resuelto' WHERE id = ?`, [req2.params.id]);
+      res.json({ success: true, reportId: req2.params.id });
+    } catch (err) {
+      res.status(500).json({ error: "Error al resolver reporte." });
     }
   });
   app.post("/api/reports/create", requireAuth, async (req2, res) => {

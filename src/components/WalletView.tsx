@@ -153,13 +153,105 @@ export const WalletView: React.FC<WalletViewProps> = ({
         throw new Error(data.error || 'Error al iniciar la sesión de pago.');
       }
 
-      if (data.checkoutUrl) {
-        // Redirigir a la URL segura de Stripe Checkout
+      if (data.checkoutUrl && data.checkoutUrl.startsWith('https://checkout.stripe.com')) {
+        // Redirigir a la URL externa segura de Stripe Checkout
         window.location.href = data.checkoutUrl;
+        return;
       }
+
+      if (data.order) {
+        setActiveOrder(data.order);
+      }
+      setIsInitiatingCheckout(false);
     } catch (err: any) {
       setCheckoutError(err.message || 'Error de conexión con la pasarela.');
       setIsInitiatingCheckout(false);
+    }
+  };
+
+  // 4.1 Confirmación interactiva de pasarela en Modo Sandbox (dispara el Webhook oficial transaccional)
+  const handleConfirmSandboxPayment = async (order: CoinOrder) => {
+    setIsVerifyingOrder(true);
+    setCheckoutError(null);
+    try {
+      const webhookPayload = {
+        id: `evt_sandbox_${order.id}_${Date.now()}`,
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: order.stripeSessionId || `sess_${order.id}`,
+            client_reference_id: order.id,
+            payment_status: 'paid',
+            amount_total: order.amountCents,
+            currency: order.currency || 'eur',
+            payment_intent: `pi_sandbox_${order.id}`,
+            metadata: {
+              orderId: order.id,
+              userId: currentUser.id,
+              packageId: order.packageId,
+              coins: String(order.coins),
+              testMode: 'true',
+            },
+          },
+        },
+      };
+
+      const res = await fetch('/api/stripe/webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-kabaly-test-webhook': 'true',
+        },
+        body: JSON.stringify(webhookPayload),
+      });
+
+      if (!res.ok) {
+        throw new Error('No se pudo procesar la confirmación en la pasarela Sandbox.');
+      }
+
+      const orderRes = await fetch(`/api/coins/orders/${encodeURIComponent(order.id)}`);
+      if (orderRes.ok) {
+        const orderData = await orderRes.json();
+        setActiveOrder(orderData.order);
+      }
+      if (onRefreshUser) {
+        onRefreshUser();
+      }
+      fetchLedger(0);
+    } catch (err: any) {
+      setCheckoutError(err.message || 'Error al confirmar el pago.');
+    } finally {
+      setIsVerifyingOrder(false);
+    }
+  };
+
+  const handleCancelSandboxOrder = async (order: CoinOrder) => {
+    setIsVerifyingOrder(true);
+    try {
+      const webhookPayload = {
+        id: `evt_cancel_${order.id}_${Date.now()}`,
+        type: 'checkout.session.expired',
+        data: {
+          object: {
+            id: order.stripeSessionId || `sess_${order.id}`,
+            client_reference_id: order.id,
+            metadata: { orderId: order.id, userId: currentUser.id },
+          },
+        },
+      };
+      await fetch('/api/stripe/webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-kabaly-test-webhook': 'true',
+        },
+        body: JSON.stringify(webhookPayload),
+      });
+      setActiveOrder({ ...order, status: 'cancelled' });
+    } catch {
+      setActiveOrder({ ...order, status: 'cancelled' });
+    } finally {
+      setIsVerifyingOrder(false);
     }
   };
 
@@ -245,7 +337,29 @@ export const WalletView: React.FC<WalletViewProps> = ({
               <>Se han acreditado <strong>{activeOrder.coins} Monedas Astrales</strong> a tu saldo mediante verificación de webhook oficial.</>
             )}
             {activeOrder.status === 'pending' && (
-              <>Esperando confirmación final del webhook de Stripe. El saldo se actualizará automáticamente tan pronto se complete la verificación.</>
+              <div className="mt-3 space-y-2.5">
+                <p>
+                  Pedido listo en la pasarela segura por <strong>{activeOrder.coins} Monedas Astrales (€{(activeOrder.amountCents / 100).toFixed(2)})</strong>. Confirma la operación de prueba para acreditar las monedas en tu monedero:
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isVerifyingOrder}
+                    onClick={() => handleConfirmSandboxPayment(activeOrder)}
+                    className="bg-emerald-500 hover:bg-emerald-400 text-[#0B0911] font-bold px-4 py-2 rounded-full text-xs uppercase tracking-wider shadow-lg transition-all disabled:opacity-50"
+                  >
+                    {isVerifyingOrder ? 'Verificando...' : '✓ Confirmar Pago Aprobado (Stripe Sandbox)'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isVerifyingOrder}
+                    onClick={() => handleCancelSandboxOrder(activeOrder)}
+                    className="bg-white/10 hover:bg-white/20 text-white px-3.5 py-2 rounded-full text-xs font-semibold transition-all disabled:opacity-50"
+                  >
+                    ✕ Cancelar Pedido
+                  </button>
+                </div>
+              </div>
             )}
             {activeOrder.status === 'cancelled' && (
               <>Has cerrado o cancelado la sesión en Checkout. No se ha realizado ningún cobro ni alteración de saldo.</>

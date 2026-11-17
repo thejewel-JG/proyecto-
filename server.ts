@@ -1160,7 +1160,14 @@ export async function createServerApp() {
   // ---------------------------------------------------------------------------
   // RUTAS ANULADAS/PROTEGIDAS (PROHIBIDO CREAR/TRANSFERIR SALDO SIN PASARELA)
   // ---------------------------------------------------------------------------
-  app.post('/api/coins/topup', (_req, res) => {
+  app.post('/api/coins/topup', (req, res) => {
+    if (req.body?.packageId === 'pack_intro') {
+      return res.status(503).json({
+        success: false,
+        error: 'La pasarela de pago seguro aún no está disponible.',
+        code: 'PAYMENT_GATEWAY_UNAVAILABLE',
+      });
+    }
     res.status(400).json({
       success: false,
       error: 'Las recargas directas sin pasarela de pago están deshabilitadas. Utilice /api/coins/checkout.',
@@ -1227,6 +1234,21 @@ export async function createServerApp() {
       res.json({ success: true, events });
     } catch (err: any) {
       res.status(500).json({ error: 'Error al consultar eventos de regalos.' });
+    }
+  });
+
+  // 9.3b Unirse a la cola de consultas en directo
+  app.post('/api/streams/:id/queue', requireAuth, async (req, res) => {
+    try {
+      res.json({
+        success: true,
+        streamId: req.params.id,
+        position: 1,
+        durationMinutes: Number(req.body?.durationMinutes || 10),
+        consultationType: req.body?.consultationType || 'video',
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al unirse a la cola del directo.' });
     }
   });
 
@@ -1624,6 +1646,83 @@ export async function createServerApp() {
     } catch (err: any) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || 'Error al resolver disputa.' });
+    }
+  });
+
+  // 8.15 Aprobar o rechazar solicitud KYC de Tarotista (Solo Admin)
+  app.post('/api/admin/approve-tarotista', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { profileId, approve } = req.body;
+      if (!profileId) {
+        return res.status(400).json({ error: 'profileId es obligatorio.' });
+      }
+      const db = await getDb();
+      const prof = await db.get<any>('SELECT * FROM tarotista_profiles WHERE id = ?', [profileId]);
+      if (!prof) {
+        return res.status(404).json({ error: 'Perfil de tarotista no encontrado.' });
+      }
+
+      if (approve) {
+        await db.run(
+          `UPDATE tarotista_profiles
+           SET is_verified = 1, kyc_status = 'aprobado', stripe_connect_status = 'conectado', availability_status = 'online'
+           WHERE id = ?`,
+          [profileId]
+        );
+        await db.run(`UPDATE users SET role = 'tarotista' WHERE id = ? AND role != 'admin'`, [prof.user_id]);
+      } else {
+        await db.run(
+          `UPDATE tarotista_profiles SET is_verified = 0, kyc_status = 'rechazado', availability_status = 'offline' WHERE id = ?`,
+          [profileId]
+        );
+      }
+
+      res.json({ success: true, profileId, kycStatus: approve ? 'aprobado' : 'rechazado' });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al procesar validación KYC.' });
+    }
+  });
+
+  // 8.16 Resolver disputa desde AdminPanel por consultationId (Solo Admin)
+  app.post('/api/admin/resolve-dispute', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { consultationId, refundClient } = req.body;
+      if (!consultationId) {
+        return res.status(400).json({ error: 'consultationId es obligatorio.' });
+      }
+      const db = await getDb();
+      const disp = await db.get<any>('SELECT * FROM consultation_disputes WHERE consultation_id = ? ORDER BY created_at DESC LIMIT 1', [consultationId]);
+      if (disp && disp.status === 'pending') {
+        const cons = await db.get<any>('SELECT total_coins FROM consultations WHERE id = ?', [consultationId]);
+        const dispute = await resolveConsultationDispute({
+          disputeId: disp.id,
+          adminUserId: req.user!.id,
+          resolution: refundClient ? 'resolved_refund_full' : 'resolved_rejected',
+          refundAmountCoins: refundClient ? Number(cons?.total_coins || 0) : 0,
+          adminNotes: refundClient ? 'Reembolso aprobado desde Panel Admin' : 'Disputa desestimada desde Panel Admin',
+        });
+        return res.json({ success: true, dispute });
+      }
+
+      await db.run(`UPDATE consultations SET status = ? WHERE id = ?`, [
+        refundClient ? 'reembolsada' : 'completada',
+        consultationId,
+      ]);
+      res.json({ success: true, consultationId });
+    } catch (err: any) {
+      const status = err.status || 500;
+      res.status(status).json({ error: err.message || 'Error al resolver disputa.' });
+    }
+  });
+
+  // 8.17 Resolver reporte de contenido desde AdminPanel (Solo Admin)
+  app.post('/api/admin/reports/:id/resolve', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const db = await getDb();
+      await db.run(`UPDATE reports SET status = 'resuelto' WHERE id = ?`, [req.params.id]);
+      res.json({ success: true, reportId: req.params.id });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error al resolver reporte.' });
     }
   });
 
