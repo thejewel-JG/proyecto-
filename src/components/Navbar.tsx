@@ -27,37 +27,58 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWallet,
   onOpenSearch,
   onOpenAdmin,
+  onOpenCreatePost,
+  onOpenMessages,
   onOpenAstraAi,
   onOpenNotifications,
+  unreadMessagesCount = 0,
   unreadNotificationsCount = 0,
 }) => {
   const [showDrawerMenu, setShowDrawerMenu] = useState(false);
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-40 bg-[#0B0911]/90 backdrop-blur-xl border-b border-white/5 px-4 h-14 flex items-center justify-center">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-[#0B0911]/90 backdrop-blur-xl border-b border-white/5 px-3 sm:px-4 h-14 flex items-center justify-center">
         <div className="w-full max-w-5xl flex justify-between items-center">
-          {/* Left: Menu Hamburguesa */}
-          <button
-            onClick={() => setShowDrawerMenu(true)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-[#F7E7C1] hover:text-[#E5B54F] transition-colors"
-            title="Menú KABALY"
-          >
-            <span className="material-symbols-outlined text-2xl">menu</span>
-          </button>
+          {/* Left: Menu Hamburguesa + Botón Crear '+' estilo Instagram */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowDrawerMenu(true)}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-[#F7E7C1] hover:text-[#E5B54F] transition-colors"
+              title="Menú KABALY"
+            >
+              <span className="material-symbols-outlined text-2xl">menu</span>
+            </button>
+            {onOpenCreatePost && (
+              <button
+                onClick={() => {
+                  if (!currentUser) {
+                    onOpenAuthModal();
+                    return;
+                  }
+                  onOpenCreatePost();
+                }}
+                className="w-8 h-8 rounded-full bg-[#1C102E] border border-[#E5B54F]/30 flex items-center justify-center text-[#E5B54F] hover:bg-[#E5B54F] hover:text-[#0B0911] transition-all"
+                title="Publicar Reel o Post"
+              >
+                <span className="material-symbols-outlined text-lg">add_box</span>
+              </button>
+            )}
+          </div>
 
           {/* Center: Brand Wordmark (KABALY en dorado Cinzel) */}
           <div
             onClick={() => onSelectCategory('Para ti')}
             className="flex items-center gap-1.5 cursor-pointer group"
           >
+            <span className="text-[#E5B54F] text-sm group-hover:rotate-45 transition-transform">✦</span>
             <h1 className="font-cinzel text-lg sm:text-xl font-bold tracking-[0.25em] text-[#F7E7C1] group-hover:text-[#E5B54F] transition-colors uppercase">
               KABALY
             </h1>
           </div>
 
-          {/* Right: Search + Notifications Bell + User Avatar */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* Right: Search + Activity Heart/Bell + Instagram DM Paper Plane + User Avatar / Coins */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             {/* Search Icon */}
             <button
               onClick={onOpenSearch}
@@ -67,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="material-symbols-outlined text-xl">search</span>
             </button>
 
-            {/* Notification Bell */}
+            {/* Activity / Notifications (Heart/Bell style Instagram) */}
             <button
               onClick={() => {
                 if (!currentUser) {
@@ -77,7 +98,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onOpenNotifications?.();
               }}
               className="w-8 h-8 rounded-full flex items-center justify-center text-[#F7E7C1] hover:text-[#E5B54F] transition-colors relative"
-              title="Notificaciones sagradas"
+              title="Actividad y Notificaciones"
             >
               <span className="material-symbols-outlined text-xl">notifications</span>
               {unreadNotificationsCount > 0 && (
@@ -85,19 +106,46 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            {/* User Avatar with Gold Ring or Login Button */}
-            {currentUser ? (
-              <div
-                onClick={onOpenWallet}
-                className="w-8 h-8 rounded-full story-ring p-[1.5px] cursor-pointer hover:scale-105 transition-transform"
-                title={`${currentUser.name} (${currentUser.coinsBalance} Monedas)`}
+            {/* Direct Messages Icon (Instagram DM style) */}
+            {onOpenMessages && (
+              <button
+                onClick={() => {
+                  if (!currentUser) {
+                    onOpenAuthModal();
+                    return;
+                  }
+                  onOpenMessages();
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[#F7E7C1] hover:text-[#E5B54F] transition-colors relative"
+                title="Mensajes Directos"
               >
-                <img
-                  src={currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
-                  alt={currentUser.name}
-                  className="w-full h-full object-cover rounded-full bg-[#1A1026]"
-                />
-              </div>
+                <span className="material-symbols-outlined text-xl -rotate-12">send</span>
+                {unreadMessagesCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-[#E5B54F] text-[#0B0911] text-[9px] font-extrabold px-1 rounded-full min-w-[14px] h-[14px] flex items-center justify-center">
+                    {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* User Avatar with Gold Ring & Coin Pill or Login Button */}
+            {currentUser ? (
+              <button
+                onClick={onOpenWallet}
+                className="flex items-center gap-1.5 bg-[#160B24] border border-[#E5B54F]/35 hover:border-[#E5B54F] rounded-full pl-2 pr-1 py-0.5 transition-all"
+                title={`Monedero de ${currentUser.name} (${currentUser.coinsBalance} Monedas)`}
+              >
+                <span className="text-[10px] font-bold text-[#E5B54F] hidden sm:inline">
+                  {currentUser.coinsBalance} 🪙
+                </span>
+                <div className="w-7 h-7 rounded-full story-ring p-[1.5px]">
+                  <img
+                    src={currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
+                    alt={currentUser.name}
+                    className="w-full h-full object-cover rounded-full bg-[#1A1026]"
+                  />
+                </div>
+              </button>
             ) : (
               <button
                 onClick={onOpenAuthModal}

@@ -1,6 +1,45 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PublicUserProfile, Review, User, Video, ProfileHighlight } from '../types';
 import { FollowsListModal } from './FollowsListModal';
+import { CommentsDrawer } from './CommentsDrawer';
+
+const DEFAULT_HIGHLIGHTS = [
+  {
+    id: 'hl_tiradas',
+    title: 'Tiradas',
+    icon: 'style',
+    image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=600',
+    caption: 'Arcanos Mayores y lecturas evolutivas de alta precisión energética ✨',
+  },
+  {
+    id: 'hl_rituales',
+    title: 'Rituales',
+    icon: 'local_fire_department',
+    image: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&q=80&w=600',
+    caption: 'Velas consagradas, salvia blanca y apertura de caminos en luna llena 🕯️',
+  },
+  {
+    id: 'hl_testimonios',
+    title: 'Reseñas ★',
+    icon: 'workspace_premium',
+    image: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&q=80&w=600',
+    caption: 'Más de 320 almas guiadas con 5.0★ de valoración verificada en KABALY 💜',
+  },
+  {
+    id: 'hl_horoscopo',
+    title: 'Astrología',
+    icon: 'auto_awesome',
+    image: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?auto=format&fit=crop&q=80&w=600',
+    caption: 'Revolución solar, carta natal kármica y tránsitos planetarios 🪐',
+  },
+  {
+    id: 'hl_altar',
+    title: 'Mi Altar',
+    icon: 'flare',
+    image: 'https://images.unsplash.com/photo-1532968961962-8a0cb3a2d4f5?auto=format&fit=crop&q=80&w=600',
+    caption: 'Espacio sagrado de canalización y conexión espiritual diaria 🌙',
+  },
+];
 
 interface PublicUserProfileViewProps {
   userId?: string;
@@ -36,6 +75,9 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
     type: 'followers',
   });
   const [activePostModal, setActivePostModal] = useState<Video | null>(null);
+  const [activeHighlightModal, setActiveHighlightModal] = useState<typeof DEFAULT_HIGHLIGHTS[0] | null>(null);
+  const [showCommentsDrawer, setShowCommentsDrawer] = useState(false);
+  const [doubleTapHeart, setDoubleTapHeart] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
@@ -292,27 +334,55 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
             <span className="material-symbols-outlined text-lg">chat_bubble</span>
           </button>
         </div>
+
+        {/* Instagram-Style Story Highlights Row ("Auras Destacadas") */}
+        <div className="w-full max-w-md mt-5 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-start sm:justify-center gap-4 overflow-x-auto no-scrollbar pb-1 px-1">
+            {DEFAULT_HIGHLIGHTS.map((hl) => (
+              <button
+                key={hl.id}
+                onClick={() => setActiveHighlightModal(hl)}
+                className="flex flex-col items-center gap-1.5 shrink-0 group"
+              >
+                <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-[#E5B54F] via-[#9D4EDD] to-[#F7E7C1] group-hover:scale-105 transition-transform shadow-[0_0_12px_rgba(229,181,79,0.25)]">
+                  <div className="w-full h-full rounded-full overflow-hidden bg-[#0E071A] p-[1.5px] relative">
+                    <img src={hl.image} alt={hl.title} className="w-full h-full object-cover rounded-full opacity-85 group-hover:opacity-100" />
+                    <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-base text-[#F7E7C1] drop-shadow">{hl.icon}</span>
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] text-[#D8CEF0] font-medium group-hover:text-[#E5B54F] transition-colors">
+                  {hl.title}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Navigation Content Tabs (Publicaciones, Vídeos, Directos, Opiniones, Sobre mí) */}
-      <div className="flex border-b border-white/10 mt-6 px-3 overflow-x-auto no-scrollbar">
+      {/* Navigation Content Tabs (Instagram + TikTok Hybrid Tabs with Icons) */}
+      <div className="flex border-b border-white/10 mt-5 px-2 overflow-x-auto no-scrollbar">
         {[
-          { id: 'publicaciones', label: 'Publicaciones' },
-          { id: 'videos', label: 'Vídeos' },
-          { id: 'directos', label: 'Directos' },
-          { id: 'opiniones', label: 'Opiniones' },
-          { id: 'sobre_mi', label: 'Sobre mí' },
+          { id: 'publicaciones', label: 'Publicaciones', icon: 'grid_on' },
+          { id: 'videos', label: 'Vídeos', icon: 'smart_display' },
+          { id: 'directos', label: 'Directos', icon: 'sensors' },
+          { id: 'opiniones', label: 'Opiniones', icon: 'workspace_premium' },
+          { id: 'sobre_mi', label: 'Sobre mí', icon: 'auto_awesome' },
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id as any)}
-            className={`flex-1 py-3 px-3 text-xs font-semibold whitespace-nowrap transition-all relative ${
+            className={`flex-1 py-3 px-2.5 text-xs font-semibold whitespace-nowrap transition-all relative flex items-center justify-center gap-1.5 ${
               activeTab === t.id
                 ? 'text-[#F7E7C1] font-bold'
                 : 'text-[#A09BAE] hover:text-[#F7E7C1]'
             }`}
           >
-            {t.label}
+            <span className={`material-symbols-outlined text-sm ${activeTab === t.id ? 'text-[#E5B54F]' : 'text-[#A09BAE]'}`}>
+              {t.icon}
+            </span>
+            <span>{t.label}</span>
             {activeTab === t.id && (
               <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-[#E5B54F] to-transparent shadow-[0_0_8px_#E5B54F]" />
             )}
@@ -321,32 +391,40 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
       </div>
 
       {/* Tabs Content */}
-      <div className="p-3">
-        {/* PUBLICACIONES & VÍDEOS: 3-column Grid with play icon overlays */}
+      <div className="p-2.5 sm:p-3">
+        {/* PUBLICACIONES & VÍDEOS: 3-column TikTok/Instagram Grid with Pinned badge & view counters */}
         {(activeTab === 'publicaciones' || activeTab === 'videos') && (
-          <div className="grid grid-cols-3 gap-2">
-            {profile.posts.map((post) => (
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+            {profile.posts.map((post, idx) => (
               <div
                 key={post.id}
                 onClick={() => setActivePostModal(post)}
-                className="relative aspect-[9/13] rounded-2xl overflow-hidden bg-[#180E28] cursor-pointer group border border-white/5 shadow-md"
+                className="relative aspect-[9/13] rounded-2xl overflow-hidden bg-[#180E28] cursor-pointer group border border-white/5 hover:border-[#E5B54F]/60 shadow-md transition-all"
               >
                 <img
                   src={post.thumbnailUrl || post.videoUrl}
                   alt={post.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/25" />
+
+                {/* TikTok-style Pinned Badge on first post */}
+                {(idx === 0 || post.isPinned) && (
+                  <div className="absolute top-2 left-2 bg-[#E5B54F] text-[#0E071A] text-[9px] font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow">
+                    <span className="material-symbols-outlined text-[10px]">push_pin</span>
+                    <span>Fijado</span>
+                  </div>
+                )}
 
                 {/* Play Button Icon on Bottom Right */}
-                <div className="absolute bottom-2 right-2 w-6 h-6 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white text-[10px]">
+                <div className="absolute bottom-2 right-2 w-6 h-6 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white text-[10px] group-hover:bg-[#E5B54F] group-hover:text-[#0B0911] transition-colors">
                   <span>▶</span>
                 </div>
 
-                {/* Likes indicator on bottom left */}
-                <div className="absolute bottom-2 left-2 text-[10px] text-white/90 font-semibold flex items-center gap-1">
-                  <span>♥</span>
-                  <span>{post.likes}</span>
+                {/* TikTok-style Views / Likes counter on bottom left */}
+                <div className="absolute bottom-2 left-2 text-[10px] text-white/95 font-bold flex items-center gap-1 drop-shadow">
+                  <span>▷</span>
+                  <span>{((post.likes || 420) * 3.2).toFixed(1)}K</span>
                 </div>
               </div>
             ))}
@@ -407,22 +485,104 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
         )}
       </div>
 
-      {/* Post Modal Viewer if clicked */}
+      {/* Story Highlight Modal Viewer (Instagram Highlight Experience) */}
+      {activeHighlightModal && (
+        <div
+          onClick={() => setActiveHighlightModal(null)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-w-sm w-full aspect-[9/16] max-h-[82vh] bg-[#120B1D] rounded-3xl overflow-hidden border border-[#E5B54F]/50 shadow-2xl flex flex-col justify-between"
+          >
+            {/* Story Progress Bar */}
+            <div className="absolute top-3 left-3 right-3 z-20 space-y-2">
+              <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
+                <div className="w-full h-full bg-[#E5B54F]" />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <img src={profile.avatar} alt={profile.name} className="w-8 h-8 rounded-full object-cover border border-[#E5B54F]" />
+                  <div>
+                    <p className="text-xs font-bold text-white">{profile.name}</p>
+                    <span className="text-[10px] text-[#E5B54F]">{activeHighlightModal.title}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveHighlightModal(null)}
+                  className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <img
+              src={activeHighlightModal.image}
+              alt={activeHighlightModal.title}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/50 pointer-events-none" />
+
+            <div className="relative z-20 p-5 space-y-3 text-center">
+              <p className="text-sm font-medium text-[#F7E7C1] leading-relaxed">
+                {activeHighlightModal.caption}
+              </p>
+              {tar && (
+                <button
+                  onClick={() => {
+                    setActiveHighlightModal(null);
+                    onBookConsultation(tar.id);
+                  }}
+                  className="gold-gradient-btn w-full py-3 rounded-full text-xs font-bold"
+                >
+                  Consultar con {tar.professionalName} ✦
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TikTok / Instagram Reel Full-Screen Viewer Modal when clicking a grid post */}
       {activePostModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="relative max-w-sm w-full bg-[#120B1D] rounded-3xl overflow-hidden border border-[#E5B54F]/40 shadow-2xl">
-            <button
-              onClick={() => setActivePostModal(null)}
-              className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+          <div className="relative max-w-sm w-full aspect-[9/16] max-h-[85vh] bg-[#0B0614] rounded-3xl overflow-hidden border border-[#E5B54F]/40 shadow-2xl select-none">
+            {/* Top Bar */}
+            <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between">
+              <div className="flex items-center gap-2 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                <img src={profile.avatar} alt={profile.name} className="w-6 h-6 rounded-full object-cover border border-[#E5B54F]" />
+                <span className="text-xs font-bold text-[#F7E7C1]">{profile.handle || '@luna_astral'}</span>
+              </div>
+              <button
+                onClick={() => setActivePostModal(null)}
+                className="w-8 h-8 rounded-full bg-black/60 border border-white/15 text-white flex items-center justify-center hover:border-[#E5B54F]"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Media with Double-Tap Heart */}
+            <div
+              onDoubleClick={() => {
+                setDoubleTapHeart(true);
+                setTimeout(() => setDoubleTapHeart(false), 900);
+                setActivePostModal({
+                  ...activePostModal,
+                  likes: activePostModal.likes + (activePostModal.isLikedByCurrentUser ? 0 : 1),
+                  isLikedByCurrentUser: true,
+                });
+              }}
+              className="w-full h-full relative cursor-pointer"
             >
-              ✕
-            </button>
-            <div className="aspect-[9/13] w-full bg-black">
               {activePostModal.mediaType === 'video' ? (
                 <video
                   src={activePostModal.videoUrl}
+                  poster={activePostModal.thumbnailUrl}
                   controls
                   autoPlay
+                  loop
+                  playsInline
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -432,13 +592,90 @@ export const PublicUserProfileView: React.FC<PublicUserProfileViewProps> = ({
                   className="w-full h-full object-cover"
                 />
               )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/40 pointer-events-none" />
+
+              {doubleTapHeart && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
+                  <span className="material-symbols-outlined text-7xl text-[#E5B54F] filled">favorite</span>
+                </div>
+              )}
             </div>
-            <div className="p-4 space-y-1">
+
+            {/* Right TikTok Action Rail inside Profile Reel Modal */}
+            <div className="absolute right-3 bottom-20 z-20 flex flex-col items-center gap-3.5">
+              <button
+                onClick={() =>
+                  setActivePostModal({
+                    ...activePostModal,
+                    likes: activePostModal.likes + (activePostModal.isLikedByCurrentUser ? -1 : 1),
+                    isLikedByCurrentUser: !activePostModal.isLikedByCurrentUser,
+                  })
+                }
+                className="flex flex-col items-center gap-0.5"
+              >
+                <div className={`w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/15 flex items-center justify-center ${
+                  activePostModal.isLikedByCurrentUser ? 'text-red-500' : 'text-white hover:text-[#E5B54F]'
+                }`}>
+                  <span className="material-symbols-outlined text-xl filled">
+                    {activePostModal.isLikedByCurrentUser ? 'favorite' : 'favorite_border'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-white">{activePostModal.likes}</span>
+              </button>
+
+              <button
+                onClick={() => setShowCommentsDrawer(true)}
+                className="flex flex-col items-center gap-0.5"
+              >
+                <div className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/15 flex items-center justify-center text-white hover:text-[#E5B54F]">
+                  <span className="material-symbols-outlined text-xl">chat_bubble</span>
+                </div>
+                <span className="text-[10px] font-bold text-white">{activePostModal.commentsCount}</span>
+              </button>
+
+              <button
+                onClick={handleShare}
+                className="flex flex-col items-center gap-0.5"
+              >
+                <div className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/15 flex items-center justify-center text-white hover:text-[#E5B54F]">
+                  <span className="material-symbols-outlined text-xl">share</span>
+                </div>
+                <span className="text-[10px] font-bold text-white">Compartir</span>
+              </button>
+            </div>
+
+            {/* Bottom Caption & Consult CTA */}
+            <div className="absolute bottom-4 left-4 right-4 z-20 space-y-2">
               <h4 className="font-cinzel text-sm font-bold text-[#F7E7C1]">{activePostModal.title}</h4>
-              <p className="text-xs text-[#A09BAE]">{activePostModal.description || 'Visión canalizada en KABALY.'}</p>
+              <p className="text-xs text-[#D8CEF0]/90 line-clamp-2">
+                {activePostModal.description || 'Visión canalizada en KABALY.'}
+              </p>
+              {tar && (
+                <button
+                  onClick={() => {
+                    setActivePostModal(null);
+                    onBookConsultation(tar.id);
+                  }}
+                  className="gold-gradient-btn w-full py-2.5 rounded-full text-xs font-bold flex items-center justify-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-sm">call</span>
+                  <span>Consultar con {tar.professionalName} · {tar.pricePerMinEur.toFixed(2)} €/min</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Comments Drawer for Profile Reel */}
+      {showCommentsDrawer && activePostModal && (
+        <CommentsDrawer
+          isOpen={showCommentsDrawer}
+          onClose={() => setShowCommentsDrawer(false)}
+          videoId={activePostModal.id}
+          currentUser={currentUser}
+          onOpenAuthModal={onOpenAuthModal}
+        />
       )}
 
       {/* Follows Modal */}

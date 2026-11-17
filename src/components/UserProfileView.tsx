@@ -622,161 +622,221 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6 pb-12">
-      {/* Profile Banner & Header Card */}
-      <div className="glass-card rounded-3xl border border-[#D4AF37]/30 overflow-hidden relative shadow-2xl">
-        {/* Banner Cover Image */}
-        <div className="h-44 md:h-52 w-full relative bg-[#1A1026]">
-          <img 
-            src={currentUser.coverImage || editCover} 
-            alt="Cover" 
-            className="w-full h-full object-cover opacity-80"
+      {/* Profile Banner & Header Card (Instagram + TikTok Hybrid Layout in KABALY Colors) */}
+      <div className="bg-[#0E071A] rounded-3xl border border-[#E5B54F]/30 overflow-hidden relative shadow-2xl">
+        {/* Top Instagram/TikTok Handle Header Bar */}
+        <div className="px-4 py-3 bg-[#120A20]/95 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-cinzel text-sm sm:text-base font-bold text-[#F7E7C1] tracking-wide">
+              {currentUser.handle || `@${currentUser.name.toLowerCase().replace(/\s+/g, '_')}`}
+            </span>
+            {currentUser.role === 'tarotista' && (
+              <span className="material-symbols-outlined text-[#E5B54F] text-base filled">verified</span>
+            )}
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#24133A] border border-[#E5B54F]/30 text-[#E5B54F] font-semibold">
+              {currentUser.role === 'tarotista' ? '🔮 Oráculo' : '✨ Buscador'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="w-8 h-8 rounded-full bg-[#1F1135] border border-[#E5B54F]/35 text-[#E5B54F] flex items-center justify-center hover:bg-[#E5B54F] hover:text-[#0B0911] transition-all"
+              title="Crear Reel o Publicación"
+            >
+              <span className="material-symbols-outlined text-lg">add_box</span>
+            </button>
+            <button
+              onClick={onOpenSpendingLimits || onOpenLimitsModal}
+              className="w-8 h-8 rounded-full bg-[#1F1135] border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:border-[#E5B54F] hover:text-[#E5B54F] transition-all"
+              title="Límites de Gasto Responsable"
+            >
+              <span className="material-symbols-outlined text-base">shield</span>
+            </button>
+            <button
+              onClick={() => setShowEditProfileModal(true)}
+              className="w-8 h-8 rounded-full bg-[#1F1135] border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:border-[#E5B54F] hover:text-[#E5B54F] transition-all"
+              title="Editar Perfil y Configuración"
+            >
+              <span className="material-symbols-outlined text-base">tune</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Cover Banner */}
+        <div className="h-32 sm:h-40 w-full relative bg-[#1A1026]">
+          <img
+            src={currentUser.coverImage || editCover}
+            alt="Cover"
+            className="w-full h-full object-cover opacity-75"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0B0911] via-transparent to-black/30" />
-          
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0E071A] via-[#0E071A]/30 to-transparent" />
           <button
             onClick={() => setShowEditProfileModal(true)}
-            className="absolute top-3 right-3 bg-[#0B0911]/70 backdrop-blur-md border border-[#D4AF37]/40 text-[#D4AF37] px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 hover:bg-[#5A2D82] transition-all"
+            className="absolute top-2.5 right-3 bg-black/60 backdrop-blur-md border border-[#E5B54F]/40 text-[#E5B54F] px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 hover:bg-[#E5B54F] hover:text-[#0B0911] transition-all"
           >
-            <span className="material-symbols-outlined text-sm">photo_camera</span>
-            <span className="hidden sm:inline">Editar Portada</span>
+            <span className="material-symbols-outlined text-xs">photo_camera</span>
+            <span>Portada</span>
           </button>
         </div>
 
-        {/* Profile Info Overlay */}
-        <div className="px-6 pb-6 pt-0 relative -mt-16 sm:-mt-20">
-          <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4">
-            {/* Avatar */}
-            <div className="relative group">
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border-4 border-[#D4AF37] overflow-hidden bg-[#1A1026] p-0.5 gold-glow shadow-2xl">
-                <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover rounded-full" />
+        {/* Instagram + TikTok Profile Info Container */}
+        <div className="px-5 pb-5 -mt-12 relative z-10">
+          {/* Row 1: Avatar on Left + 4-Column Stats on Right (Instagram Style) */}
+          <div className="flex items-end justify-between gap-4">
+            {/* Avatar with Story Ring & '+' Badge */}
+            <div className="relative shrink-0">
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full p-[2.5px] bg-gradient-to-tr from-[#E5B54F] via-[#FFF4D0] to-[#9D4EDD] shadow-[0_0_25px_rgba(229,181,79,0.4)]">
+                <img
+                  src={currentUser.avatar}
+                  alt={currentUser.name}
+                  className="w-full h-full object-cover rounded-full bg-[#0E071A] border-2 border-[#0E071A]"
+                />
               </div>
-              <button 
+              <button
                 onClick={() => setShowEditProfileModal(true)}
-                className="absolute bottom-1 right-1 bg-[#D4AF37] text-[#0B0911] rounded-full p-2 border-2 border-[#0B0911] hover:scale-110 transition-transform"
+                className="absolute bottom-0.5 right-0.5 w-7 h-7 rounded-full bg-[#E5B54F] text-[#0B0911] border-2 border-[#0E071A] flex items-center justify-center hover:scale-110 transition-transform shadow-md"
+                title="Cambiar foto de perfil"
               >
-                <span className="material-symbols-outlined text-xs font-bold">edit</span>
+                <span className="material-symbols-outlined text-sm font-bold">add</span>
               </button>
             </div>
 
-            {/* Profile Action Buttons */}
-            <div className="flex flex-wrap items-center justify-center gap-2">
+            {/* 4-Column Inline Stats (Publicaciones | Seguidores | Siguiendo | Me gusta) */}
+            <div className="flex-1 grid grid-cols-4 gap-1 text-center pb-2">
               <button
-                onClick={() => setShowCreateModal(true)}
-                className="bg-gradient-to-r from-[#D4AF37] to-[#F7E7C1] text-[#0B0911] font-bold px-5 py-2.5 rounded-full text-xs uppercase tracking-wider gold-glow hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5"
+                onClick={() => setActiveSubTab('publicaciones')}
+                className="hover:opacity-80 transition-opacity"
               >
-                <span className="material-symbols-outlined text-base">add_circle</span>
-                <span>Publicar Contenido</span>
+                <span className="text-base sm:text-lg font-extrabold text-[#F7E7C1] block">{myPosts.length}</span>
+                <span className="text-[10px] sm:text-[11px] text-[#A09BAE]">Posts</span>
               </button>
 
               <button
-                onClick={() => setShowEditProfileModal(true)}
-                className="bg-[#2E1B47] text-[#F7E7C1] border border-[#D4AF37]/40 px-4 py-2.5 rounded-full text-xs font-bold hover:border-[#D4AF37] transition-all flex items-center gap-1"
+                onClick={() => setFollowsModal({ isOpen: true, type: 'followers' })}
+                className="hover:opacity-80 transition-opacity"
               >
-                <span className="material-symbols-outlined text-sm">settings</span>
-                <span>Editar</span>
+                <span className="text-base sm:text-lg font-extrabold text-[#F7E7C1] block">{relationshipStats.followersCount}</span>
+                <span className="text-[10px] sm:text-[11px] text-[#A09BAE]">Seguidores</span>
               </button>
 
               <button
-                onClick={onOpenSpendingLimits || onOpenLimitsModal}
-                className="bg-[#1A1026] text-[#D4AF37] border border-[#D4AF37]/30 px-3.5 py-2.5 rounded-full text-xs font-bold hover:bg-[#5A2D82]/50 transition-all flex items-center gap-1"
-                title="Ajustes de autorregulación y límites de gasto"
+                onClick={() => setFollowsModal({ isOpen: true, type: 'following' })}
+                className="hover:opacity-80 transition-opacity"
               >
-                <span className="material-symbols-outlined text-sm">shield</span>
-                <span className="hidden md:inline">Límites</span>
+                <span className="text-base sm:text-lg font-extrabold text-[#F7E7C1] block">{relationshipStats.followingCount}</span>
+                <span className="text-[10px] sm:text-[11px] text-[#A09BAE]">Siguiendo</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSubTab('estadisticas')}
+                className="hover:opacity-80 transition-opacity"
+              >
+                <span className="text-base sm:text-lg font-extrabold text-[#E5B54F] block">{totalLikesReceived}</span>
+                <span className="text-[10px] sm:text-[11px] text-[#A09BAE]">Me gusta</span>
               </button>
             </div>
           </div>
 
-          {/* User Bio Details */}
-          <div className="mt-4 text-center sm:text-left space-y-2.5">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <h2 className="font-playfair text-2xl font-bold text-[#F7E7C1]">
-                {currentUser.name}
+          {/* Row 2: Name, Bio & Astral Triad */}
+          <div className="mt-3 space-y-2">
+            <div>
+              <h2 className="font-cinzel text-lg sm:text-xl font-bold text-[#F7E7C1] flex items-center gap-1.5">
+                <span>{currentUser.name}</span>
+                {currentUser.role === 'tarotista' && (
+                  <span className="material-symbols-outlined text-[#E5B54F] text-base filled">verified</span>
+                )}
               </h2>
-              <span className="text-xs text-[#D4AF37] font-mono">
-                {currentUser.handle || `@${currentUser.name.toLowerCase().replace(/\s+/g, '')}`}
-              </span>
-              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                currentUser.role === 'tarotista'
-                  ? 'bg-[#5A2D82] text-[#D4AF37] border border-[#D4AF37]'
-                  : 'bg-[#2E1B47] text-[#A7A7A7]'
-              }`}>
-                {currentUser.role === 'tarotista' ? '🔮 Vidente Verificado' : '✨ Buscador Astral'}
-              </span>
+              <p className="text-xs text-[#D8CEF0]/90 mt-1 leading-relaxed max-w-xl">
+                {currentUser.bio || 'Explorador del cosmos, lecturas de tarot, carta astral y revelaciones en KABALY ✨'}
+              </p>
             </div>
 
-            <p className="text-xs text-[#A7A7A7] max-w-xl leading-relaxed">
-              {currentUser.bio || 'Explorador del cosmos, lecturas de tarot, carta astral y revelaciones en KABALY.'}
-            </p>
-
             {/* Tríada Astral e Identidad Esotérica */}
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 pt-1">
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               {currentUser.sunSign && (
-                <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
-                  <span className="text-[#D4AF37]">☉</span> Sol en <strong>{currentUser.sunSign}</strong>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#1C102E] border border-[#E5B54F]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
+                  <span className="text-[#E5B54F]">☉</span> {currentUser.sunSign}
                 </span>
               )}
               {currentUser.moonSign && (
-                <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
-                  <span className="text-[#D4AF37]">☽</span> Luna en <strong>{currentUser.moonSign}</strong>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#1C102E] border border-[#E5B54F]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
+                  <span className="text-[#E5B54F]">☽</span> {currentUser.moonSign}
                 </span>
               )}
               {currentUser.risingSign && (
-                <span className="px-2.5 py-1 rounded-full bg-[#1A1026] border border-[#D4AF37]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
-                  <span className="text-[#D4AF37]">↑</span> Ascendente <strong>{currentUser.risingSign}</strong>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#1C102E] border border-[#E5B54F]/30 text-[10px] text-[#F7E7C1] flex items-center gap-1">
+                  <span className="text-[#E5B54F]">↑</span> {currentUser.risingSign}
                 </span>
               )}
               {currentUser.rulingArcana && (
-                <span className="px-2.5 py-1 rounded-full bg-[#2E1B47]/60 border border-[#D4AF37]/40 text-[10px] text-[#D4AF37] font-bold">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#24133A] border border-[#E5B54F]/40 text-[10px] text-[#E5B54F] font-bold">
                   🎴 {currentUser.rulingArcana}
-                </span>
-              )}
-              {currentUser.spiritualGift && (
-                <span className="px-2.5 py-1 rounded-full bg-[#0B0911]/80 border border-white/10 text-[10px] text-[#A09BAE]">
-                  ✦ {currentUser.spiritualGift}
                 </span>
               )}
               {!currentUser.sunSign && !currentUser.rulingArcana && (
                 <button
                   onClick={() => setShowEditProfileModal(true)}
-                  className="px-3 py-1 rounded-full bg-[#1A1026] border border-dashed border-[#D4AF37]/40 text-[10px] text-[#D4AF37] hover:border-[#D4AF37] transition-all"
+                  className="px-3 py-1 rounded-full bg-[#1A1026] border border-dashed border-[#E5B54F]/40 text-[10px] text-[#E5B54F] hover:border-[#E5B54F] transition-all"
                 >
-                  + Configurar mi Tríada Astral (☉ ☽ ↑) y Arcano Regente
+                  + Añadir mi Tríada Astral (☉ ☽ ↑) y Arcano
                 </button>
               )}
             </div>
 
             {/* Role switch CTA -> Real KYC Application */}
             {currentUser.role === 'cliente' && (
-              <div className="pt-2">
+              <div className="pt-1">
                 <button
                   onClick={() => setShowKycModal(true)}
-                  className="text-xs text-[#D4AF37] hover:underline font-bold flex items-center gap-1 justify-center sm:justify-start"
+                  className="text-[11px] text-[#E5B54F] hover:underline font-semibold flex items-center gap-1"
                 >
-                  <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                  ¿Eres profesional del Tarot? Solicita tu perfil verificado KYC aquí ➔
+                  <span className="material-symbols-outlined text-xs">verified</span>
+                  <span>¿Eres Tarotista o Guía Espiritual? Solicita tu verificación oficial aquí →</span>
                 </button>
               </div>
             )}
           </div>
 
-          {/* Auras Destacadas (Instagram-style Highlights Row) */}
-          <div className="pt-5 mt-4 border-t border-white/5">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]/80">
-                ✦ Auras Destacadas Permanentes
-              </span>
-            </div>
+          {/* Row 3: Instagram/TikTok Action Buttons Bar (Editar perfil | Publicar Reel | Monedero Astral) */}
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            <button
+              onClick={() => setShowEditProfileModal(true)}
+              className="py-2.5 px-3 rounded-xl bg-[#1C102E] hover:bg-[#281742] border border-white/15 hover:border-[#E5B54F]/50 text-xs font-bold text-[#F7E7C1] transition-all flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm text-[#E5B54F]">edit_square</span>
+              <span>Editar perfil</span>
+            </button>
+
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="py-2.5 px-3 rounded-xl bg-[#1C102E] hover:bg-[#281742] border border-white/15 hover:border-[#E5B54F]/50 text-xs font-bold text-[#F7E7C1] transition-all flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm text-[#E5B54F]">add_circle</span>
+              <span>Subir Reel</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubTab('monedero')}
+              className="gold-gradient-btn py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-md"
+            >
+              <span className="material-symbols-outlined text-sm">account_balance_wallet</span>
+              <span>{currentUser.coinsBalance} 🪙</span>
+            </button>
+          </div>
+
+          {/* Row 4: Instagram Story Highlights Row ("Auras Destacadas") */}
+          <div className="pt-4 mt-4 border-t border-white/10">
             <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-1">
               {/* Botón + Nueva Aura */}
               <button
                 onClick={() => setShowCreateHighlightModal(true)}
                 className="flex flex-col items-center gap-1.5 shrink-0 group"
               >
-                <div className="w-14 h-14 rounded-full border-2 border-dashed border-[#D4AF37]/50 bg-[#1A1026]/80 flex items-center justify-center text-[#D4AF37] group-hover:border-[#D4AF37] group-hover:scale-105 transition-all">
+                <div className="w-14 h-14 rounded-full border-2 border-dashed border-[#E5B54F]/50 bg-[#1A1026]/80 flex items-center justify-center text-[#E5B54F] group-hover:border-[#E5B54F] group-hover:scale-105 transition-all">
                   <span className="material-symbols-outlined text-xl">add</span>
                 </div>
-                <span className="text-[10px] text-[#D4AF37] font-semibold">Nueva Aura</span>
+                <span className="text-[10px] text-[#E5B54F] font-semibold">Nueva</span>
               </button>
 
               {highlights.map((h) => (
@@ -785,138 +845,51 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onClick={() => setActiveHighlight(h)}
                   className="flex flex-col items-center gap-1.5 shrink-0 group"
                 >
-                  <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-[#D4AF37] via-[#9D4EDD] to-[#F7E7C1] group-hover:scale-105 transition-transform">
+                  <div className="w-14 h-14 rounded-full p-[2px] bg-gradient-to-tr from-[#E5B54F] via-[#9D4EDD] to-[#F7E7C1] group-hover:scale-105 transition-transform">
                     <div className="w-full h-full rounded-full overflow-hidden bg-[#0B0911] p-[1.5px]">
                       <img src={h.coverUrl} alt={h.title} className="w-full h-full object-cover rounded-full" />
                     </div>
                   </div>
-                  <span className="text-[10px] text-[#F7E7C1]/85 font-medium max-w-[68px] truncate group-hover:text-[#D4AF37]">
+                  <span className="text-[10px] text-[#F7E7C1]/85 font-medium max-w-[68px] truncate group-hover:text-[#E5B54F]">
                     {h.title}
                   </span>
                 </button>
               ))}
             </div>
           </div>
-
-          {/* Social Stats Row */}
-          <div className="grid grid-cols-4 gap-2 pt-5 mt-4 border-t border-[#D4AF37]/20 text-center">
-            <div 
-              onClick={() => setFollowsModal({ isOpen: true, type: 'followers' })}
-              className="bg-[#0B0911]/60 p-2.5 rounded-2xl border border-[#D4AF37]/20 cursor-pointer hover:border-[#D4AF37] transition-all group"
-            >
-              <span className="font-playfair text-lg font-bold text-[#D4AF37] block group-hover:scale-105 transition-transform">
-                {relationshipStats.followersCount}
-              </span>
-              <span className="text-[10px] text-[#A7A7A7] uppercase tracking-wider group-hover:text-[#F7E7C1]">Seguidores</span>
-            </div>
-
-            <div 
-              onClick={() => setFollowsModal({ isOpen: true, type: 'following' })}
-              className="bg-[#0B0911]/60 p-2.5 rounded-2xl border border-[#D4AF37]/20 cursor-pointer hover:border-[#D4AF37] transition-all group"
-            >
-              <span className="font-playfair text-lg font-bold text-[#D4AF37] block group-hover:scale-105 transition-transform">
-                {relationshipStats.followingCount}
-              </span>
-              <span className="text-[10px] text-[#A7A7A7] uppercase tracking-wider group-hover:text-[#F7E7C1]">Siguiendo</span>
-            </div>
-
-            <div 
-              onClick={() => setActiveSubTab('publicaciones')}
-              className="bg-[#0B0911]/60 p-2.5 rounded-2xl border border-[#D4AF37]/20 cursor-pointer hover:border-[#D4AF37] transition-all"
-            >
-              <span className="font-playfair text-lg font-bold text-[#D4AF37] block">
-                {myPosts.length}
-              </span>
-              <span className="text-[10px] text-[#A7A7A7] uppercase tracking-wider">Visiones</span>
-            </div>
-
-            <div 
-              onClick={() => setActiveSubTab('monedero')}
-              className="bg-gradient-to-br from-[#2E1B47] to-[#5A2D82] p-2.5 rounded-2xl border border-[#D4AF37]/40 cursor-pointer hover:scale-105 transition-all gold-glow"
-            >
-              <span className="font-playfair text-lg font-bold text-[#D4AF37] block flex items-center justify-center gap-1">
-                <span className="material-symbols-outlined text-sm filled text-[#D4AF37]">stars</span>
-                {currentUser.coinsBalance}
-              </span>
-              <span className="text-[10px] text-[#F7E7C1] uppercase font-bold tracking-wider">Monedas</span>
-            </div>
-          </div>
         </div>
-      </div>
 
-      {/* Sub-Navigation Tabs */}
-      <div className="flex border-b border-[#D4AF37]/20 gap-2 overflow-x-auto no-scrollbar">
-        <button
-          onClick={() => setActiveSubTab('publicaciones')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-            activeSubTab === 'publicaciones'
-              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
-              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
-          }`}
-        >
-          <SolomonStarIcon className="w-4 h-4" />
-          <span>Mis Publicaciones ({myPosts.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('guardados')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-            activeSubTab === 'guardados'
-              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
-              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
-          }`}
-        >
-          <ArcanaGrimoireIcon className="w-4 h-4" filled={activeSubTab === 'guardados'} />
-          <span>Grimorio Guardado ({savedPosts.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('estadisticas')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-            activeSubTab === 'estadisticas'
-              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
-              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
-          }`}
-        >
-          <CrystalBallIcon className="w-4 h-4" />
-          <span>Visión del Oráculo</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('monedero')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-            activeSubTab === 'monedero'
-              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
-              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">account_balance_wallet</span>
-          <span>Monedero Astral</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('consultas')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-            activeSubTab === 'consultas'
-              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
-              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">video_camera_front</span>
-          <span>Consultas 1:1 ({userConsultations.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('compras')}
-          className={`pb-3 px-4 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border-b-2 shrink-0 ${
-            activeSubTab === 'compras'
-              ? 'border-[#D4AF37] text-[#D4AF37] gold-glow'
-              : 'border-transparent text-[#A7A7A7] hover:text-[#F7E7C1]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-base">shopping_bag</span>
-          <span>Mis Compras ({purchases.length})</span>
-        </button>
+        {/* Row 5: Instagram + TikTok Icon Tab Bar inside Profile Card */}
+        <div className="flex border-t border-white/10 bg-[#120A20]/60 overflow-x-auto no-scrollbar">
+          {[
+            { id: 'publicaciones', label: 'Posts', icon: 'grid_on', count: myPosts.length },
+            { id: 'guardados', label: 'Guardados', icon: 'bookmark', count: savedPosts.length },
+            { id: 'monedero', label: 'Monedero', icon: 'account_balance_wallet' },
+            { id: 'consultas', label: 'Consultas', icon: 'video_camera_front', count: userConsultations.length },
+            { id: 'estadisticas', label: 'Insights', icon: 'monitoring' },
+            { id: 'compras', label: 'Desbloqueos', icon: 'lock_open', count: purchases.length },
+          ].map((tab) => {
+            const isAct = activeSubTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveSubTab(tab.id as any)}
+                className={`flex-1 py-3 px-3 text-xs font-semibold whitespace-nowrap transition-all relative flex items-center justify-center gap-1.5 ${
+                  isAct ? 'text-[#E5B54F] font-bold' : 'text-[#A09BAE] hover:text-[#F7E7C1]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">{tab.icon}</span>
+                <span>{tab.label}</span>
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span className="text-[10px] opacity-75">({tab.count})</span>
+                )}
+                {isAct && (
+                  <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-transparent via-[#E5B54F] to-transparent shadow-[0_0_8px_#E5B54F]" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* SUB-VIEW 1: My Posts Grid */}

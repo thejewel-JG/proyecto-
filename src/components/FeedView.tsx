@@ -50,14 +50,19 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onOpenCreatePost,
 }) => {
   // Navigation Sub-tab
-  const [activeSubTab, setActiveSubTab] = useState<'inicio' | 'oraculos' | 'directos' | 'horoscopo' | 'explorar'>('inicio');
+  const [activeSubTab, setActiveSubTab] = useState<'inicio' | 'reels' | 'oraculos' | 'directos' | 'horoscopo' | 'explorar'>('inicio');
 
   // Feed posts state
   const [posts, setPosts] = useState<Video[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [favoritesMap, setFavoritesMap] = useState<Record<string, boolean>>({});
+  const [savedPostsMap, setSavedPostsMap] = useState<Record<string, boolean>>({});
+  const [followedAuthorsMap, setFollowedAuthorsMap] = useState<Record<string, boolean>>({});
+  const [doubleTapHeartPostId, setDoubleTapHeartPostId] = useState<string | null>(null);
+  const [copiedShareToast, setCopiedShareToast] = useState<string | null>(null);
 
   // Interactive Quick Modals
   const [activeModal, setActiveModal] = useState<'carta_dia' | 'rituales' | 'compatibilidad' | 'tirada_express' | 'horoscopo' | null>(null);
@@ -151,11 +156,14 @@ export const FeedView: React.FC<FeedViewProps> = ({
     }
   };
 
-  const handleToggleLike = async (postId: string) => {
+  const handleToggleLike = async (postId: string, forceLikeOnly = false) => {
     if (!currentUser) {
       onOpenAuthModal?.();
       return;
     }
+    const target = posts.find(p => p.id === postId);
+    if (forceLikeOnly && target?.isLikedByCurrentUser) return;
+
     try {
       const res = await fetch(`/api/videos/${encodeURIComponent(postId)}/like`, { method: 'POST' });
       const data = await res.json();
@@ -165,6 +173,51 @@ export const FeedView: React.FC<FeedViewProps> = ({
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleDoubleTapLike = (postId: string) => {
+    setDoubleTapHeartPostId(postId);
+    setTimeout(() => setDoubleTapHeartPostId(null), 900);
+    handleToggleLike(postId, true);
+  };
+
+  const handleToggleSavePost = async (postId: string) => {
+    if (!currentUser) {
+      onOpenAuthModal?.();
+      return;
+    }
+    const currentlySaved = !!savedPostsMap[postId];
+    setSavedPostsMap(prev => ({ ...prev, [postId]: !currentlySaved }));
+    try {
+      await fetch(`/api/posts/${encodeURIComponent(postId)}/save`, {
+        method: currentlySaved ? 'DELETE' : 'POST',
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleQuickFollowAuthor = async (authorId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      onOpenAuthModal?.();
+      return;
+    }
+    setFollowedAuthorsMap(prev => ({ ...prev, [authorId]: true }));
+    try {
+      await fetch(`/api/users/${encodeURIComponent(authorId)}/follow`, { method: 'POST' });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSharePost = (post: Video) => {
+    const shareUrl = `${window.location.origin}/?post=${encodeURIComponent(post.id)}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl).catch(() => {});
+    }
+    setCopiedShareToast(`Enlace de "${post.title}" copiado`);
+    setTimeout(() => setCopiedShareToast(null), 2500);
   };
 
   // Featured Tarotistas (Ensure Luna Astral, El Caminante, Madame Sol appear with exact data)
@@ -207,37 +260,280 @@ export const FeedView: React.FC<FeedViewProps> = ({
   const currentVideo = posts[currentIndex] || null;
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto pb-16">
-      {/* 1. TOP HORIZONTAL CATEGORY PILLS */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1 pb-1">
-        {[
-          { id: 'inicio', label: 'Inicio', icon: 'home' },
-          { id: 'oraculos', label: 'Oráculos', icon: 'style' },
-          { id: 'directos', label: 'Directos', icon: 'sensors' },
-          { id: 'horoscopo', label: 'Horóscopo', icon: 'auto_awesome' },
-          { id: 'explorar', label: 'Explorar', icon: 'explore' },
-        ].map((tab) => {
-          const isActive = activeSubTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveSubTab(tab.id as any)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                isActive
-                  ? 'bg-[#231338] text-[#F7E7C1] border border-[#E5B54F] shadow-[0_0_12px_rgba(229,181,79,0.35)] font-bold'
-                  : 'bg-[#140B22]/70 text-[#A09BAE] border border-white/5 hover:border-white/20 hover:text-[#F7E7C1]'
-              }`}
-            >
-              <span className={`material-symbols-outlined text-sm ${isActive ? 'text-[#E5B54F]' : 'text-[#A09BAE]'}`}>
-                {tab.icon}
-              </span>
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+    <div className="space-y-5 max-w-xl mx-auto pb-20">
+      {/* Share Toast */}
+      {copiedShareToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-[#160B24] border border-[#E5B54F] text-[#E5B54F] px-4 py-2 rounded-full text-xs font-bold shadow-2xl animate-fade-in flex items-center gap-2">
+          <span>✦</span>
+          <span>{copiedShareToast}</span>
+        </div>
+      )}
+
+      {/* 1. TOP TIKTOK + INSTAGRAM NAVIGATION BAR */}
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2 pt-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {[
+            { id: 'inicio', label: 'Inicio', icon: 'home' },
+            { id: 'reels', label: 'Para ti · Reels', icon: 'smart_display' },
+            { id: 'oraculos', label: 'Oráculos', icon: 'style' },
+            { id: 'directos', label: 'Directos', icon: 'sensors' },
+            { id: 'horoscopo', label: 'Horóscopo', icon: 'auto_awesome' },
+          ].map((tab) => {
+            const isActive = activeSubTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveSubTab(tab.id as any)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                  isActive
+                    ? 'bg-[#231338] text-[#F7E7C1] border border-[#E5B54F] shadow-[0_0_12px_rgba(229,181,79,0.35)] font-bold'
+                    : 'bg-[#140B22]/70 text-[#A09BAE] border border-white/5 hover:border-white/20 hover:text-[#F7E7C1]'
+                }`}
+              >
+                <span className={`material-symbols-outlined text-sm ${isActive ? 'text-[#E5B54F]' : 'text-[#A09BAE]'}`}>
+                  {tab.icon}
+                </span>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
+      {/* 1B. INSTAGRAM STORIES BAR AT THE VERY TOP OF FEED */}
+      {activeSubTab === 'inicio' && (
+        <StoriesBar
+          storyGroups={storyGroups}
+          currentUser={currentUser}
+          onSelectGroup={(g) => setSelectedStoryGroup(g)}
+          onCreateStory={() => {
+            if (!currentUser) {
+              onOpenAuthModal?.();
+              return;
+            }
+            setShowCreateStoryModal(true);
+          }}
+        />
+      )}
+
+      {/* ==================== MODO TIKTOK REELS ("PARA TI · REELS") ==================== */}
+      {activeSubTab === 'reels' && currentVideo && (
+        <div className="relative w-full aspect-[9/16] max-h-[78vh] rounded-3xl overflow-hidden bg-[#08040F] border border-[#E5B54F]/35 shadow-[0_15px_50px_rgba(0,0,0,0.9)] select-none">
+          {/* Media Content with Double-Tap Like */}
+          <div
+            onDoubleClick={() => handleDoubleTapLike(currentVideo.id)}
+            className="w-full h-full relative cursor-pointer"
+          >
+            {currentVideo.mediaType === 'video' ? (
+              <video
+                ref={videoRef}
+                key={currentVideo.id}
+                src={currentVideo.videoUrl}
+                poster={currentVideo.thumbnailUrl}
+                autoPlay
+                loop
+                muted={isMuted}
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <img
+                src={currentVideo.thumbnailUrl || currentVideo.videoUrl}
+                alt={currentVideo.title}
+                className="w-full h-full object-cover"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/90 pointer-events-none" />
+
+            {/* Double-Tap Heart Animation Overlay */}
+            {doubleTapHeartPostId === currentVideo.id && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
+                <span className="material-symbols-outlined text-8xl text-[#E5B54F] drop-shadow-[0_0_30px_rgba(229,181,79,0.9)] filled">
+                  favorite
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Top Overlay inside TikTok Player: Siguiendo | Para ti + Mute & Prev/Next controls */}
+          <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between">
+            <div className="flex items-center gap-3 bg-black/45 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-xs">
+              <button
+                onClick={() => setActiveSubTab('inicio')}
+                className="text-[#A09BAE] hover:text-white transition-colors"
+              >
+                Portal
+              </button>
+              <span className="text-white/20">|</span>
+              <span className="text-[#E5B54F] font-bold border-b-2 border-[#E5B54F] pb-0.5">
+                Para ti ✦
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsMuted(!isMuted)}
+                className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:border-[#E5B54F]"
+                title={isMuted ? 'Activar sonido' : 'Silenciar'}
+              >
+                <span className="material-symbols-outlined text-base">
+                  {isMuted ? 'volume_off' : 'volume_up'}
+                </span>
+              </button>
+              <button
+                onClick={() => setCurrentIndex(prev => (prev > 0 ? prev - 1 : posts.length - 1))}
+                className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:border-[#E5B54F]"
+                title="Reel anterior"
+              >
+                <span className="material-symbols-outlined text-base">keyboard_arrow_up</span>
+              </button>
+              <button
+                onClick={() => setCurrentIndex(prev => (prev < posts.length - 1 ? prev + 1 : 0))}
+                className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-[#F7E7C1] flex items-center justify-center hover:border-[#E5B54F]"
+                title="Siguiente Reel"
+              >
+                <span className="material-symbols-outlined text-base">keyboard_arrow_down</span>
+              </button>
+            </div>
+          </div>
+
+          {/* RIGHT ACTION RAIL (100% TikTok Layout in KABALY colors) */}
+          <div className="absolute right-3 bottom-6 z-20 flex flex-col items-center gap-4">
+            {/* 1. Creator Avatar with '+' Follow Badge */}
+            <div className="relative mb-2">
+              <div
+                onClick={() => onViewTarotistaProfile(currentVideo.tarotistaId)}
+                className="w-12 h-12 rounded-full p-[2px] bg-gradient-to-tr from-[#E5B54F] via-[#FFF4D0] to-[#9D4EDD] cursor-pointer shadow-lg"
+              >
+                <img
+                  src={currentVideo.tarotistaAvatar}
+                  alt={currentVideo.tarotistaName}
+                  className="w-full h-full rounded-full object-cover bg-[#0B0911]"
+                />
+              </div>
+              {!followedAuthorsMap[currentVideo.tarotistaId] && (
+                <button
+                  onClick={(e) => handleQuickFollowAuthor(currentVideo.tarotistaId, e)}
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-[#E5B54F] text-[#0B0911] flex items-center justify-center text-xs font-extrabold shadow-md hover:scale-110 transition-transform"
+                  title="Seguir"
+                >
+                  +
+                </button>
+              )}
+            </div>
+
+            {/* 2. Like Heart */}
+            <button
+              onClick={() => handleToggleLike(currentVideo.id)}
+              className="flex flex-col items-center gap-0.5 group"
+            >
+              <div className={`w-10 h-10 rounded-full bg-black/45 backdrop-blur-md border border-white/10 flex items-center justify-center transition-transform group-active:scale-125 ${
+                currentVideo.isLikedByCurrentUser ? 'text-red-500 border-red-500/40' : 'text-white hover:text-[#E5B54F]'
+              }`}>
+                <span className="material-symbols-outlined text-2xl filled">
+                  {currentVideo.isLikedByCurrentUser ? 'favorite' : 'favorite_border'}
+                </span>
+              </div>
+              <span className="text-[11px] font-bold text-white drop-shadow">{currentVideo.likes}</span>
+            </button>
+
+            {/* 3. Comments Drawer */}
+            <button
+              onClick={() => {
+                setActiveCommentPostId(currentVideo.id);
+                setShowCommentsModal(true);
+              }}
+              className="flex flex-col items-center gap-0.5 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-black/45 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-[#E5B54F] transition-transform group-active:scale-110">
+                <span className="material-symbols-outlined text-2xl">chat_bubble</span>
+              </div>
+              <span className="text-[11px] font-bold text-white drop-shadow">{currentVideo.commentsCount}</span>
+            </button>
+
+            {/* 4. Bookmark / Save */}
+            <button
+              onClick={() => handleToggleSavePost(currentVideo.id)}
+              className="flex flex-col items-center gap-0.5 group"
+            >
+              <div className={`w-10 h-10 rounded-full bg-black/45 backdrop-blur-md border border-white/10 flex items-center justify-center transition-transform group-active:scale-110 ${
+                savedPostsMap[currentVideo.id] ? 'text-[#E5B54F] border-[#E5B54F]/50' : 'text-white hover:text-[#E5B54F]'
+              }`}>
+                <span className="material-symbols-outlined text-2xl">
+                  {savedPostsMap[currentVideo.id] ? 'bookmark' : 'bookmark_border'}
+                </span>
+              </div>
+              <span className="text-[10px] font-semibold text-white/90">Guardar</span>
+            </button>
+
+            {/* 5. Share */}
+            <button
+              onClick={() => handleSharePost(currentVideo)}
+              className="flex flex-col items-center gap-0.5 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-black/45 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-[#E5B54F] transition-transform group-active:scale-110">
+                <span className="material-symbols-outlined text-xl">reply</span>
+              </div>
+              <span className="text-[10px] font-semibold text-white/90">{currentVideo.sharesCount || 24}</span>
+            </button>
+
+            {/* 6. Spinning TikTok Audio Vinyl Disc */}
+            <div
+              onClick={() => onViewTarotistaProfile(currentVideo.tarotistaId)}
+              className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#1A0E2E] via-[#3A2060] to-[#E5B54F] p-1.5 border border-[#E5B54F]/50 animate-spin cursor-pointer shadow-[0_0_15px_rgba(229,181,79,0.4)]"
+              style={{ animationDuration: '6s' }}
+              title={currentVideo.soundTitle || 'Sintonía Cósmica 432Hz'}
+            >
+              <img
+                src={currentVideo.tarotistaAvatar}
+                alt="Audio"
+                className="w-full h-full rounded-full object-cover"
+              />
+            </div>
+          </div>
+
+          {/* BOTTOM-LEFT TIKTOK CAPTION, HANDLE, CONSULT CTA & AUDIO TICKER */}
+          <div className="absolute left-4 right-16 bottom-5 z-20 space-y-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onViewTarotistaProfile(currentVideo.tarotistaId)}
+                className="font-cinzel text-sm font-bold text-[#F7E7C1] hover:text-[#E5B54F] flex items-center gap-1 drop-shadow"
+              >
+                <span>@{currentVideo.tarotistaName.toLowerCase().replace(/\s+/g, '_')}</span>
+                {currentVideo.isVerified && (
+                  <span className="material-symbols-outlined text-sm text-[#E5B54F] filled">verified</span>
+                )}
+              </button>
+              <span className="px-2 py-0.5 rounded-full bg-[#E5B54F]/20 border border-[#E5B54F]/40 text-[#E5B54F] text-[10px] font-bold">
+                {currentVideo.category}
+              </span>
+            </div>
+
+            <p className="text-xs text-[#F7E7C1]/95 line-clamp-2 leading-relaxed drop-shadow">
+              <strong className="text-[#E5B54F] mr-1">{currentVideo.title}</strong>
+              {currentVideo.description || 'Canalización de luz y guía para este ciclo estelar. #Tarot #Kabaly #Destino'}
+            </p>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#D8CEF0]/90 truncate">
+                <span className="material-symbols-outlined text-sm text-[#E5B54F]">music_note</span>
+                <span className="truncate">{currentVideo.soundTitle || 'Sonido Original — Sintonía 432Hz · KABALY'}</span>
+              </div>
+
+              <button
+                onClick={() => onBookConsultation(currentVideo.tarotistaId)}
+                className="gold-gradient-btn px-3.5 py-1.5 rounded-full text-[11px] font-bold shrink-0 flex items-center gap-1 shadow-lg"
+              >
+                <span className="material-symbols-outlined text-xs">call</span>
+                <span>Consultar ahora</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. HERO BANNER: "Tu guía espiritual siempre contigo" */}
+      {activeSubTab === 'inicio' && (
       <div className="relative rounded-3xl overflow-hidden border border-[#E5B54F]/30 shadow-2xl group">
         {/* Background Image: Celestial hands holding radiant cosmic orb with zodiac wheel */}
         <div className="h-44 sm:h-52 w-full relative overflow-hidden bg-[#160B24]">
@@ -280,6 +576,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* 3. SECTION: "Oráculos destacados" (Ver todos →) */}
       <div className="space-y-3">
@@ -427,35 +724,31 @@ export const FeedView: React.FC<FeedViewProps> = ({
         </div>
       </div>
 
-      {/* 6. COMMUNITY FEED: StoriesBar + Community Posts */}
-      <div className="pt-2 space-y-4">
-        {/* Stories Bar */}
-        <StoriesBar
-          storyGroups={storyGroups}
-          currentUser={currentUser}
-          onSelectGroup={(g) => setSelectedStoryGroup(g)}
-          onCreateStory={() => {
-            if (!currentUser) {
-              onOpenAuthModal?.();
-              return;
-            }
-            setShowCreateStoryModal(true);
-          }}
-        />
-
+      {/* 6. COMMUNITY FEED: Instagram-Style Cards with Double-Tap Heart, Bookmark, Share & Comments */}
+      {activeSubTab !== 'reels' && (
+      <div className="pt-1 space-y-4">
         {/* Publications Stream */}
-        <div className="space-y-4">
-          <h3 className="font-cinzel text-sm font-bold text-[#E5B54F] uppercase tracking-wider flex items-center gap-2">
-            <span>✦</span>
-            <span>Visiones & Transmisiones de la Comunidad</span>
-          </h3>
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <h3 className="font-cinzel text-sm font-bold text-[#E5B54F] uppercase tracking-wider flex items-center gap-2">
+              <span>✦</span>
+              <span>Feed & Reels de la Comunidad</span>
+            </h3>
+            <button
+              onClick={() => setActiveSubTab('reels')}
+              className="text-xs text-[#E5B54F] hover:text-white font-semibold flex items-center gap-1 bg-[#231338] border border-[#E5B54F]/40 px-3 py-1 rounded-full transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">smart_display</span>
+              <span>Modo TikTok Pantalla Completa</span>
+            </button>
+          </div>
 
-          {posts.map((post) => (
+          {posts.map((post, idx) => (
             <div
               key={post.id}
               className="rounded-3xl overflow-hidden bg-[#140B22] border border-[#E5B54F]/20 shadow-xl space-y-3 p-4"
             >
-              {/* Post Author Header */}
+              {/* Post Author Header (Instagram Style) */}
               <div className="flex items-center justify-between">
                 <div
                   onClick={() => onViewTarotistaProfile(post.tarotistaId)}
@@ -469,26 +762,55 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-[#F7E7C1] group-hover:text-[#E5B54F] transition-colors flex items-center gap-1">
-                      <span>{post.tarotistaName}</span>
-                      {post.isVerified && (
-                        <span className="material-symbols-outlined text-[14px] text-[#E5B54F] filled">verified</span>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs font-bold text-[#F7E7C1] group-hover:text-[#E5B54F] transition-colors flex items-center gap-1">
+                        <span>{post.tarotistaName}</span>
+                        {post.isVerified && (
+                          <span className="material-symbols-outlined text-[14px] text-[#E5B54F] filled">verified</span>
+                        )}
+                      </h4>
+                      {!followedAuthorsMap[post.tarotistaId] && (
+                        <button
+                          onClick={(e) => handleQuickFollowAuthor(post.tarotistaId, e)}
+                          className="text-[10px] font-bold text-[#E5B54F] hover:underline ml-1"
+                        >
+                          • Seguir
+                        </button>
                       )}
-                    </h4>
-                    <span className="text-[10px] text-[#A09BAE]">✦ {post.category}</span>
+                    </div>
+                    <span className="text-[10px] text-[#A09BAE] flex items-center gap-1">
+                      <span>♫ {post.soundTitle || 'Sintonía Cósmica 432Hz'}</span>
+                      <span>•</span>
+                      <span className="text-[#E5B54F]">{post.category}</span>
+                    </span>
                   </div>
                 </div>
 
-                <button
-                  onClick={() => onViewTarotistaProfile(post.tarotistaId)}
-                  className="text-[11px] text-[#E5B54F] border border-[#E5B54F]/40 hover:bg-[#E5B54F] hover:text-[#120B1D] font-bold px-3 py-1 rounded-full transition-all"
-                >
-                  Consultar
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => onBookConsultation(post.tarotistaId)}
+                    className="text-[11px] text-[#E5B54F] border border-[#E5B54F]/40 hover:bg-[#E5B54F] hover:text-[#120B1D] font-bold px-3 py-1 rounded-full transition-all"
+                  >
+                    Consultar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCurrentIndex(idx);
+                      setActiveSubTab('reels');
+                    }}
+                    className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#A09BAE] hover:text-[#E5B54F] flex items-center justify-center"
+                    title="Abrir en Modo TikTok Reels"
+                  >
+                    <span className="material-symbols-outlined text-base">fullscreen</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Media Container */}
-              <div className="relative aspect-[9/12] w-full rounded-2xl overflow-hidden bg-black border border-white/5">
+              {/* Media Container with Instagram Double-Tap to Like */}
+              <div
+                onDoubleClick={() => handleDoubleTapLike(post.id)}
+                className="relative aspect-[9/12] w-full rounded-2xl overflow-hidden bg-black border border-white/5 cursor-pointer select-none"
+              >
                 {post.mediaType === 'video' ? (
                   <video
                     src={post.videoUrl}
@@ -504,52 +826,103 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     className="w-full h-full object-cover"
                   />
                 )}
+
+                {/* Double-Tap Heart Burst */}
+                {doubleTapHeartPostId === post.id && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-ping">
+                    <span className="material-symbols-outlined text-7xl text-[#E5B54F] drop-shadow-[0_0_25px_rgba(229,181,79,0.9)] filled">
+                      favorite
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* Post Caption & Actions */}
+              {/* Instagram Action Bar: Left (Heart, Comment, Share) | Right (Bookmark) */}
               <div className="space-y-2 pt-1">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-4">
                     <button
                       onClick={() => handleToggleLike(post.id)}
-                      className={`flex items-center gap-1 text-xs font-bold transition-transform active:scale-90 ${
-                        post.isLikedByCurrentUser ? 'text-red-400' : 'text-[#F7E7C1] hover:text-[#E5B54F]'
+                      className={`flex items-center gap-1.5 text-xs font-bold transition-transform active:scale-90 ${
+                        post.isLikedByCurrentUser ? 'text-red-500' : 'text-[#F7E7C1] hover:text-[#E5B54F]'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-lg">
+                      <span className="material-symbols-outlined text-xl filled">
                         {post.isLikedByCurrentUser ? 'favorite' : 'favorite_border'}
                       </span>
                       <span>{post.likes}</span>
                     </button>
 
                     <button
-                      onClick={() => setShowCommentsModal(true)}
-                      className="flex items-center gap-1 text-xs font-semibold text-[#F7E7C1] hover:text-[#E5B54F]"
+                      onClick={() => {
+                        setActiveCommentPostId(post.id);
+                        setShowCommentsModal(true);
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-[#F7E7C1] hover:text-[#E5B54F]"
                     >
-                      <span className="material-symbols-outlined text-lg">chat_bubble_outline</span>
+                      <span className="material-symbols-outlined text-xl">chat_bubble_outline</span>
                       <span>{post.commentsCount}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSharePost(post)}
+                      className="flex items-center gap-1 text-xs font-semibold text-[#F7E7C1] hover:text-[#E5B54F]"
+                      title="Compartir"
+                    >
+                      <span className="material-symbols-outlined text-xl -rotate-12">send</span>
                     </button>
                   </div>
 
-                  {post.isExclusive && !post.hasUnlocked && (
+                  <div className="flex items-center gap-2">
+                    {post.isExclusive && !post.hasUnlocked && (
+                      <button
+                        onClick={() => handleInitiateUnlock(post)}
+                        className="gold-gradient-btn px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1"
+                      >
+                        <span>Desbloquear ({post.priceCoins || 100} 🪙)</span>
+                      </button>
+                    )}
+
                     <button
-                      onClick={() => handleInitiateUnlock(post)}
-                      className="gold-gradient-btn px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1"
+                      onClick={() => handleToggleSavePost(post.id)}
+                      className={`p-1 transition-transform active:scale-90 ${
+                        savedPostsMap[post.id] ? 'text-[#E5B54F]' : 'text-[#F7E7C1] hover:text-[#E5B54F]'
+                      }`}
+                      title="Guardar en Grimorio"
                     >
-                      <span>Desbloquear Arcano ({post.priceCoins || 100} 🪙)</span>
+                      <span className="material-symbols-outlined text-xl">
+                        {savedPostsMap[post.id] ? 'bookmark' : 'bookmark_border'}
+                      </span>
                     </button>
-                  )}
+                  </div>
                 </div>
 
                 <p className="text-xs text-[#D8CEF0] leading-relaxed">
-                  <strong className="text-[#F7E7C1] mr-1.5">{post.title}:</strong>
+                  <strong
+                    onClick={() => onViewTarotistaProfile(post.tarotistaId)}
+                    className="text-[#F7E7C1] mr-1.5 cursor-pointer hover:text-[#E5B54F]"
+                  >
+                    {post.tarotistaName}
+                  </strong>
+                  <span className="text-[#E5B54F] font-semibold mr-1">{post.title} —</span>
                   {post.description || 'Canalización de luz y guía para este ciclo estelar.'}
                 </p>
+
+                <button
+                  onClick={() => {
+                    setActiveCommentPostId(post.id);
+                    setShowCommentsModal(true);
+                  }}
+                  className="text-[11px] text-[#A09BAE] hover:text-[#F7E7C1] block"
+                >
+                  Ver los {post.commentsCount} comentarios...
+                </button>
               </div>
             </div>
           ))}
         </div>
       </div>
+      )}
 
       {/* ==================== INTERACTIVE MODALS ==================== */}
 
@@ -688,11 +1061,14 @@ export const FeedView: React.FC<FeedViewProps> = ({
       )}
 
       {/* Comments Drawer */}
-      {showCommentsModal && currentVideo && (
+      {showCommentsModal && (activeCommentPostId || currentVideo?.id) && (
         <CommentsDrawer
           isOpen={showCommentsModal}
-          onClose={() => setShowCommentsModal(false)}
-          videoId={currentVideo.id}
+          onClose={() => {
+            setShowCommentsModal(false);
+            setActiveCommentPostId(null);
+          }}
+          videoId={activeCommentPostId || currentVideo!.id}
           currentUser={currentUser}
           onOpenAuthModal={onOpenAuthModal}
         />

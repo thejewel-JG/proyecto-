@@ -28,40 +28,36 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   currentUserAvatar,
 }) => {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 h-14 bg-[#0B0911]/95 backdrop-blur-2xl border-t border-white/10 px-4 flex justify-around items-center max-w-5xl mx-auto">
-      {/* 1. Visiones (Feed) — Ojo Místico */}
+    <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-[#0B0911]/95 backdrop-blur-2xl border-t border-[#E5B54F]/20 px-2 sm:px-6 flex justify-around items-center max-w-5xl mx-auto shadow-[0_-8px_30px_rgba(0,0,0,0.85)]">
+      {/* 1. Inicio (Feed & Reels) */}
       <button
         onClick={() => onSelectTab('feed')}
-        className={`flex flex-col items-center justify-center p-2 transition-all relative ${
+        className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 transition-all relative ${
           activeTab === 'feed'
-            ? 'text-[#D4AF37] esoteric-glow scale-105'
+            ? 'text-[#E5B54F] scale-105'
             : 'text-[#F7E7C1]/55 hover:text-[#F7E7C1]'
         }`}
-        title="Visiones (Feed)"
+        title="Inicio y Reels"
       >
-        <MysticEyeIcon className="w-6 h-6" filled={activeTab === 'feed'} />
-        {activeTab === 'feed' && (
-          <span className="absolute bottom-0.5 w-1 h-1 bg-[#D4AF37] rounded-full shadow-[0_0_6px_#D4AF37]" />
-        )}
+        <MysticEyeIcon className="w-5 h-5" filled={activeTab === 'feed'} />
+        <span className="text-[10px] font-semibold tracking-tight">Inicio</span>
       </button>
 
-      {/* 2. Explorar Videntes — Rosa Astral */}
+      {/* 2. Explorar / Descubrir (Instagram Search & TikTok Discover) */}
       <button
         onClick={() => onSelectTab('explore')}
-        className={`flex flex-col items-center justify-center p-2 transition-all relative ${
+        className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 transition-all relative ${
           activeTab === 'explore'
-            ? 'text-[#D4AF37] esoteric-glow scale-105'
+            ? 'text-[#E5B54F] scale-105'
             : 'text-[#F7E7C1]/55 hover:text-[#F7E7C1]'
         }`}
-        title="Explorar Videntes"
+        title="Explorar Cosmos"
       >
-        <AstralCompassIcon className="w-6 h-6" filled={activeTab === 'explore'} />
-        {activeTab === 'explore' && (
-          <span className="absolute bottom-0.5 w-1 h-1 bg-[#D4AF37] rounded-full shadow-[0_0_6px_#D4AF37]" />
-        )}
+        <AstralCompassIcon className="w-5 h-5" filled={activeTab === 'explore'} />
+        <span className="text-[10px] font-semibold tracking-tight">Explorar</span>
       </button>
 
-      {/* 3. Botón Central Esotérico: Estrella Alquímica (Publicar / Canalizar) */}
+      {/* 3. Botón Central '+' Estilo TikTok (Doble Aura Púrpura + Oro Sagrado) */}
       <button
         onClick={() => {
           if (onOpenCreatePost) {
@@ -70,83 +66,81 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onSelectTab('astra_ai');
           }
         }}
-        className="w-11 h-8 rounded-xl bg-gradient-to-tr from-[#D4AF37] via-[#F7E7C1] to-[#D4AF37] text-[#0B0911] flex items-center justify-center shadow-[0_0_16px_rgba(212,175,55,0.45)] hover:scale-105 active:scale-95 transition-transform"
-        title="Canalizar / Publicar Visión"
+        className="relative group flex items-center justify-center mx-1 hover:scale-105 active:scale-95 transition-transform"
+        title="Crear Reel, Publicación o Historia"
       >
-        <SolomonStarIcon className="w-5 h-5" />
+        {/* TikTok-style offset dual aura layers in Kabaly colors */}
+        <span className="absolute -left-1 w-11 h-8 rounded-xl bg-[#9D4EDD] opacity-90 group-hover:opacity-100 transition-opacity" />
+        <span className="absolute -right-1 w-11 h-8 rounded-xl bg-[#E5B54F] opacity-95 group-hover:opacity-100 transition-opacity" />
+        <div className="relative w-11 h-8 rounded-xl bg-gradient-to-b from-[#1E1035] to-[#0B0911] border border-[#F7E7C1]/40 text-[#F7E7C1] flex items-center justify-center shadow-[0_0_15px_rgba(229,181,79,0.4)]">
+          <span className="material-symbols-outlined text-xl font-bold text-[#E5B54F]">add</span>
+        </div>
       </button>
 
-      {/* 4. Rituales en Directo — Péndulo Radiante */}
+      {/* 4. Directos LIVE (TikTok LIVE) */}
       <button
         onClick={() => onSelectTab('live')}
-        className={`flex flex-col items-center justify-center p-2 transition-all relative ${
+        className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 transition-all relative ${
           activeTab === 'live'
-            ? 'text-[#D4AF37] esoteric-glow scale-105'
+            ? 'text-[#E5B54F] scale-105'
             : 'text-[#F7E7C1]/55 hover:text-[#F7E7C1]'
         }`}
-        title="Rituales en Directo"
+        title="Directos LIVE"
       >
         <div className="relative">
-          <RitualLiveIcon className="w-6 h-6" filled={activeTab === 'live'} />
+          <RitualLiveIcon className="w-5 h-5" filled={activeTab === 'live'} />
           {hasActiveLiveStream && (
-            <span className="absolute -top-0.5 -right-1 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D4AF37] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#D4AF37]"></span>
+            <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[7px] font-extrabold px-1 rounded-sm tracking-wider animate-pulse">
+              LIVE
             </span>
           )}
         </div>
-        {activeTab === 'live' && (
-          <span className="absolute bottom-0.5 w-1 h-1 bg-[#D4AF37] rounded-full shadow-[0_0_6px_#D4AF37]" />
-        )}
+        <span className="text-[10px] font-semibold tracking-tight">Directos</span>
       </button>
 
-      {/* 5. Cámara Secreta (Mensajes) — Lunas Entrelazadas */}
+      {/* 5. Bandeja de Mensajes (Instagram DM / TikTok Inbox) */}
       <button
         onClick={() => onSelectTab('messages')}
-        className={`flex flex-col items-center justify-center p-2 transition-all relative ${
+        className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 transition-all relative ${
           activeTab === 'messages'
-            ? 'text-[#D4AF37] esoteric-glow scale-105'
+            ? 'text-[#E5B54F] scale-105'
             : 'text-[#F7E7C1]/55 hover:text-[#F7E7C1]'
         }`}
-        title="Susurros Privados (Mensajes)"
+        title="Mensajes Directos"
       >
         <div className="relative">
-          <TwinMoonsIcon className="w-6 h-6" filled={activeTab === 'messages'} />
+          <TwinMoonsIcon className="w-5 h-5" filled={activeTab === 'messages'} />
           {unreadMessagesCount > 0 && (
-            <span className="absolute -top-1.5 -right-2 bg-[#D4AF37] text-[#0B0911] text-[9px] font-bold px-1 rounded-full min-w-[15px] h-[15px] flex items-center justify-center shadow-[0_0_8px_#D4AF37]">
+            <span className="absolute -top-1.5 -right-2 bg-[#E5B54F] text-[#0B0911] text-[9px] font-extrabold px-1 rounded-full min-w-[15px] h-[15px] flex items-center justify-center shadow-[0_0_8px_#E5B54F]">
               {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
             </span>
           )}
         </div>
-        {activeTab === 'messages' && (
-          <span className="absolute bottom-0.5 w-1 h-1 bg-[#D4AF37] rounded-full shadow-[0_0_6px_#D4AF37]" />
-        )}
+        <span className="text-[10px] font-semibold tracking-tight">Mensajes</span>
       </button>
 
-      {/* 6. Tu Altar (Perfil y Monedero) — Corona Lunar o Avatar con Aro Místico */}
+      {/* 6. Perfil (Instagram / TikTok Profile Avatar Ring) */}
       <button
         onClick={() => onSelectTab('profile')}
-        className={`flex flex-col items-center justify-center p-2 transition-all relative ${
+        className={`flex flex-col items-center justify-center gap-0.5 py-1 px-2 transition-all relative ${
           activeTab === 'profile'
-            ? 'text-[#D4AF37] esoteric-glow scale-105'
+            ? 'text-[#E5B54F] scale-105'
             : 'text-[#F7E7C1]/55 hover:text-[#F7E7C1]'
         }`}
-        title="Tu Altar (Perfil y Monedero)"
+        title="Mi Perfil"
       >
         {currentUserAvatar ? (
           <div
-            className={`w-6 h-6 rounded-full overflow-hidden p-[1.5px] ${
-              activeTab === 'profile' ? 'story-ring shadow-[0_0_8px_#D4AF37]' : 'border border-[#F7E7C1]/40'
+            className={`w-5 h-5 rounded-full overflow-hidden p-[1.5px] ${
+              activeTab === 'profile' ? 'story-ring shadow-[0_0_8px_#E5B54F]' : 'border border-[#F7E7C1]/40'
             }`}
           >
             <img src={currentUserAvatar} alt="Perfil" className="w-full h-full rounded-full object-cover" />
           </div>
         ) : (
-          <LunarCrownAltarIcon className="w-6 h-6" filled={activeTab === 'profile'} />
+          <LunarCrownAltarIcon className="w-5 h-5" filled={activeTab === 'profile'} />
         )}
-        {activeTab === 'profile' && (
-          <span className="absolute bottom-0.5 w-1 h-1 bg-[#D4AF37] rounded-full shadow-[0_0_6px_#D4AF37]" />
-        )}
+        <span className="text-[10px] font-semibold tracking-tight">Perfil</span>
       </button>
     </nav>
   );
