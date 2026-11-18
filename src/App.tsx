@@ -51,6 +51,7 @@ export const App: React.FC = () => {
 
   // Navigation & View state
   const [activeTab, setActiveTab] = useState<MainTab>('feed');
+  const [autoOpenGoLive, setAutoOpenGoLive] = useState<boolean>(false);
   const [profileSubTab, setProfileSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
   const [activeCategory, setActiveCategory] = useState<Category>('Para ti');
   const [selectedTarotistaId, setSelectedTarotistaId] = useState<string | null>(null);
@@ -653,6 +654,11 @@ export const App: React.FC = () => {
                   }}
                   onOpenAuthModal={() => setShowAuthModal(true)}
                   onOpenCreatePost={() => setShowCreatePostModal(true)}
+                  onOpenLive={(autoGoLive) => {
+                    setAutoOpenGoLive(!!autoGoLive);
+                    setSelectedTarotistaId(null);
+                    setActiveTab('live');
+                  }}
                   onSelectHashtag={(tag) => {
                     setSearchQuery(tag);
                     setSelectedTarotistaId(null);
@@ -896,6 +902,9 @@ export const App: React.FC = () => {
             {activeTab === 'live' && (
               <LiveStreamView
                 stream={activeStream}
+                liveStreams={liveStreams}
+                autoOpenGoLive={autoOpenGoLive}
+                onClearAutoOpenGoLive={() => setAutoOpenGoLive(false)}
                 currentUser={currentUser || {
                   id: 'anon',
                   name: 'Invitado',
@@ -913,6 +922,9 @@ export const App: React.FC = () => {
                 onSendGift={handleSendGift}
                 onJoinQueue={handleJoinQueue}
                 onViewProfile={(uid) => setSelectedTarotistaId(uid)}
+                onOpenAuthModal={() => setShowAuthModal(true)}
+                onStreamStarted={() => fetchState()}
+                onStreamEnded={() => fetchState()}
                 onBookConsultation={(tarotistaId) => {
                   if (!currentUser) {
                     setShowAuthModal(true);

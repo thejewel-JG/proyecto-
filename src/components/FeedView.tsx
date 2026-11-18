@@ -19,6 +19,7 @@ interface FeedViewProps {
   onOpenWallet: () => void;
   onOpenAuthModal?: () => void;
   onOpenCreatePost?: () => void;
+  onOpenLive?: (autoStartGoLive?: boolean) => void;
   onSelectHashtag?: (tag: string) => void;
 }
 
@@ -48,6 +49,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
   onOpenWallet,
   onOpenAuthModal,
   onOpenCreatePost,
+  onOpenLive,
 }) => {
   // Navigation Sub-tab
   const [activeSubTab, setActiveSubTab] = useState<'inicio' | 'reels' | 'oraculos' | 'directos' | 'horoscopo' | 'explorar'>('inicio');
@@ -283,7 +285,13 @@ export const FeedView: React.FC<FeedViewProps> = ({
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveSubTab(tab.id as any)}
+                onClick={() => {
+                  if (tab.id === 'directos' && onOpenLive) {
+                    onOpenLive(false);
+                    return;
+                  }
+                  setActiveSubTab(tab.id as any);
+                }}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
                   isActive
                     ? 'bg-[#231338] text-[#F7E7C1] border border-[#E5B54F] shadow-[0_0_12px_rgba(229,181,79,0.35)] font-bold'
@@ -298,6 +306,16 @@ export const FeedView: React.FC<FeedViewProps> = ({
             );
           })}
         </div>
+
+        {/* Quick Go Live Button (TikTok LIVE Trigger) */}
+        <button
+          onClick={() => onOpenLive?.(true)}
+          className="bg-red-600/20 hover:bg-red-600 border border-red-500/60 text-red-300 hover:text-white px-3 py-1.5 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 shrink-0 transition-all shadow-md"
+          title="Emitir en Directo LIVE"
+        >
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+          <span>Emitir LIVE</span>
+        </button>
       </div>
 
       {/* 1B. INSTAGRAM STORIES BAR AT THE VERY TOP OF FEED */}

@@ -6439,11 +6439,33 @@ async function createServerApp() {
           getWithdrawals(currentUser.id, isAdmin, isTarotista)
         ]);
       }
+      const db = await getDb();
+      const dbLiveRows = await db.query(
+        "SELECT * FROM live_streams WHERE is_live = 1 ORDER BY started_at DESC"
+      ).catch(() => []);
+      const mappedDbStreams = dbLiveRows.map((r) => ({
+        id: r.id,
+        tarotistaId: r.tarotista_id,
+        tarotistaName: r.tarotista_name,
+        tarotistaAvatar: r.tarotista_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        title: r.title,
+        category: r.category || "Tarot",
+        viewersCount: r.viewer_count || 12,
+        isLive: !!r.is_live,
+        inPrivateConsultation: false,
+        streamVideoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hands-shuffling-a-deck-of-tarot-cards-43403-large.mp4",
+        queueUsers: []
+      }));
+      const seenStreamIds = new Set(mappedDbStreams.map((s) => s.id));
+      const combinedLiveStreams = [
+        ...mappedDbStreams,
+        ...initialLiveStreams.filter((s) => !seenStreamIds.has(s.id))
+      ];
       res.json({
         currentUser,
         tarotistaProfiles: publicTarotistas,
         videos: publicVideos,
-        liveStreams: initialLiveStreams,
+        liveStreams: combinedLiveStreams,
         reviews: publicReviews,
         gifts: giftCatalog,
         consultations: userConsultations,
@@ -7248,6 +7270,129 @@ async function createServerApp() {
       });
     } catch (err) {
       res.status(500).json({ error: "Error al unirse a la cola del directo." });
+    }
+  });
+  app.get("/api/streams", async (_req, res) => {
+    try {
+      const db = await getDb();
+      const rows = await db.query("SELECT * FROM live_streams WHERE is_live = 1 ORDER BY started_at DESC");
+      const streams = rows.map((r) => ({
+        id: r.id,
+        tarotistaId: r.tarotista_id,
+        tarotistaName: r.tarotista_name,
+        tarotistaAvatar: r.tarotista_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        title: r.title,
+        category: r.category || "Tarot",
+        viewersCount: r.viewer_count || 18,
+        isLive: !!r.is_live,
+        inPrivateConsultation: false,
+        streamVideoUrl: "https://assets.mixkit.co/videos/preview/mixkit-hands-shuffling-a-deck-of-tarot-cards-43403-large.mp4",
+        queueUsers: []
+      }));
+      res.json({ success: true, streams });
+    } catch (err) {
+      res.status(500).json({ error: "Error al listar directos." });
+    }
+  });
+  app.post("/api/streams/start", requireAuth, async (req2, res) => {
+    try {
+      const db = await getDb();
+      const user = req2.user;
+      const title = (req2.body?.title || `Directo Espiritual de ${user.name} \u2728`).trim().slice(0, 140);
+      const category = (req2.body?.category || "Tarot").trim();
+      const streamVideoUrl = req2.body?.streamVideoUrl || "https://assets.mixkit.co/videos/preview/mixkit-hands-shuffling-a-deck-of-tarot-cards-43403-large.mp4";
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      await db.run(
+        `UPDATE live_streams SET is_live = 0, ended_at = ? WHERE tarotista_id = ? AND is_live = 1`,
+        [now, user.id]
+      );
+      const streamId = `live_${Date.now()}`;
+      const isVerified = user.role === "tarotista" || user.role === "admin" ? 1 : 0;
+      await db.run(
+        `INSERT INTO live_streams (
+          id, tarotista_id, tarotista_name, tarotista_avatar, is_verified,
+          title, category, viewer_count, is_live, started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        [streamId, user.id, user.name, user.avatar, isVerified, title, category, 1, now]
+      );
+      const streamObj = {
+        id: streamId,
+        tarotistaId: user.id,
+        tarotistaName: user.name,
+        tarotistaAvatar: user.avatar,
+        title,
+        category,
+        viewersCount: 1,
+        isLive: true,
+        inPrivateConsultation: false,
+        streamVideoUrl,
+        queueUsers: []
+      };
+      realtimeHub.broadcast("live_stream_started", { stream: streamObj });
+      res.status(201).json({ success: true, stream: streamObj });
+    } catch (err) {
+      res.status(500).json({ error: err.message || "Error al iniciar directo." });
+    }
+  });
+  app.post("/api/streams/:id/end", requireAuth, async (req2, res) => {
+    try {
+      const db = await getDb();
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      await db.run(
+        `UPDATE live_streams SET is_live = 0, ended_at = ? WHERE id = ? AND (tarotista_id = ? OR ? = 'admin')`,
+        [now, req2.params.id, req2.user.id, req2.user.role]
+      );
+      realtimeHub.broadcast("live_stream_ended", {
+        streamId: req2.params.id,
+        endedBy: req2.user.id
+      });
+      res.json({ success: true, streamId: req2.params.id });
+    } catch (err) {
+      res.status(500).json({ error: "Error al finalizar directo." });
+    }
+  });
+  app.post("/api/streams/:id/chat", requireAuth, async (req2, res) => {
+    try {
+      const text = (req2.body?.text || "").trim().slice(0, 400);
+      if (!text) {
+        return res.status(400).json({ error: "El mensaje no puede estar vac\xEDo." });
+      }
+      const chatMsg = {
+        id: `lmsg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        channelId: req2.params.id,
+        senderId: req2.user.id,
+        senderName: req2.user.name,
+        senderAvatar: req2.user.avatar,
+        senderRole: req2.user.role,
+        text,
+        timestamp: (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      };
+      realtimeHub.broadcast("live_stream_chat", {
+        streamId: req2.params.id,
+        message: chatMsg
+      });
+      res.status(201).json({ success: true, message: chatMsg });
+    } catch (err) {
+      res.status(500).json({ error: "Error al enviar mensaje al directo." });
+    }
+  });
+  app.post("/api/streams/:id/card", requireAuth, async (req2, res) => {
+    try {
+      const { cardName, cardMeaning, cardArcana } = req2.body || {};
+      const cardEvent = {
+        id: `lcard_${Date.now()}`,
+        streamId: req2.params.id,
+        hostId: req2.user.id,
+        hostName: req2.user.name,
+        cardName: cardName || "XVII \xB7 La Estrella",
+        cardMeaning: cardMeaning || "Renovaci\xF3n espiritual, claridad y bendici\xF3n astral en tu camino.",
+        cardArcana: cardArcana || "Arcano Mayor",
+        timestamp: (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      };
+      realtimeHub.broadcast("live_stream_card", cardEvent);
+      res.json({ success: true, cardEvent });
+    } catch (err) {
+      res.status(500).json({ error: "Error al revelar carta en el directo." });
     }
   });
   const handleUnlockPost = async (req2, res) => {
