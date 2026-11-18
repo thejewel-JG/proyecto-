@@ -14,9 +14,10 @@ declare global {
 export async function attachUserMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
     const cookieToken = req.cookies?.[SESSION_COOKIE_NAME];
+    const headerToken = req.headers['x-kabaly-session'] as string | undefined;
     const authHeader = req.headers.authorization;
     const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    const token = cookieToken || bearerToken;
+    const token = cookieToken || headerToken || bearerToken;
 
     if (token) {
       const user = await getSessionUser(token);
@@ -59,9 +60,10 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
 }
 
 export function setSessionCookie(res: Response, token: string) {
+  const isHttps = res.req?.secure || res.req?.headers?.['x-forwarded-proto'] === 'https';
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: !!isHttps,
     sameSite: 'lax',
     maxAge: SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000,
     path: '/',
@@ -69,9 +71,10 @@ export function setSessionCookie(res: Response, token: string) {
 }
 
 export function clearSessionCookie(res: Response) {
+  const isHttps = res.req?.secure || res.req?.headers?.['x-forwarded-proto'] === 'https';
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: !!isHttps,
     sameSite: 'lax',
     path: '/',
   });

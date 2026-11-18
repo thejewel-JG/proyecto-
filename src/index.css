@@ -132,3 +132,71 @@
   animation: pulseGlow 2.5s infinite ease-in-out;
 }
 
+/* ==========================================================================
+   MODO DÍA (LUZ SOLAR & MARFIL SAGRADO) vs MODO NOCHE (COSMOS PÚRPURA)
+   ========================================================================== */
+html.theme-day body,
+html.theme-day .bg-\[\#0B0911\],
+html.theme-day .bg-\[\#08040E\],
+html.theme-day .bg-\[\#08040F\] {
+  background-color: #FAF6EE !important;
+  color: #1E1132 !important;
+}
+
+html.theme-day .bg-\[\#0E071A\],
+html.theme-day .bg-\[\#120B1D\],
+html.theme-day .bg-\[\#120A20\]\/95,
+html.theme-day .bg-\[\#120D1D\]\/90,
+html.theme-day .bg-\[\#140B22\],
+html.theme-day .bg-\[\#140B22\]\/95,
+html.theme-day .bg-\[\#160B24\],
+html.theme-day .bg-\[\#180E28\],
+html.theme-day .bg-\[\#1A1026\],
+html.theme-day .mystic-card,
+html.theme-day .glass-card {
+  background-color: #FFFDF8 !important;
+  background-image: none !important;
+  color: #1E1132 !important;
+  border-color: rgba(196, 144, 30, 0.38) !important;
+  box-shadow: 0 8px 28px rgba(145, 108, 25, 0.1) !important;
+}
+
+html.theme-day header,
+html.theme-day nav {
+  background-color: rgba(250, 246, 238, 0.94) !important;
+  border-color: rgba(196, 144, 30, 0.28) !important;
+}
+
+html.theme-day .bg-\[\#1C102E\],
+html.theme-day .bg-\[\#1D1033\],
+html.theme-day .bg-\[\#1F1135\],
+html.theme-day .bg-\[\#231338\],
+html.theme-day .bg-\[\#24133A\],
+html.theme-day .bg-\[\#24133A\]\/80,
+html.theme-day .bg-\[\#2E1B47\],
+html.theme-day .mystic-input {
+  background-color: #F3ECE0 !important;
+  color: #1E1132 !important;
+  border-color: rgba(196, 144, 30, 0.35) !important;
+}
+
+html.theme-day .text-\[\#F7E7C1\],
+html.theme-day .text-\[\#D8CEF0\],
+html.theme-day .text-\[\#D8CEF0\]\/85,
+html.theme-day .text-\[\#D8CEF0\]\/90,
+html.theme-day .text-\[\#E2D9F3\] {
+  color: #1E1132 !important;
+}
+
+html.theme-day .text-\[\#A09BAE\],
+html.theme-day .text-\[\#A7A7A7\],
+html.theme-day .text-\[\#F7E7C1\]\/55 {
+  color: #5C4B73 !important;
+}
+
+html.theme-day .text-\[\#E5B54F\],
+html.theme-day .text-\[\#D4AF37\] {
+  color: #B47D12 !important;
+}
+
+

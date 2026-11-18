@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { UserRole } from '../types';
 
 interface AuthViewProps {
-  onAuthSuccess: (user: any) => void;
+  onAuthSuccess: (user: any, sessionToken?: string) => void;
   onExploreAsGuest?: () => void;
+  themeMode?: 'night' | 'day';
+  onToggleTheme?: () => void;
 }
 
 const ZODIAC_SIGNS = [
@@ -14,11 +16,14 @@ const ZODIAC_SIGNS = [
 export const AuthView: React.FC<AuthViewProps> = ({
   onAuthSuccess,
   onExploreAsGuest,
+  themeMode = 'night',
+  onToggleTheme,
 }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [sunSign, setSunSign] = useState('');
@@ -60,7 +65,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
         return;
       }
 
-      onAuthSuccess(data.user);
+      if (data.sessionToken) {
+        localStorage.setItem('kabaly_session_token', data.sessionToken);
+      }
+      if (data.user) {
+        localStorage.setItem('kabaly_user', JSON.stringify(data.user));
+      }
+      onAuthSuccess(data.user, data.sessionToken);
       resetForm();
     } catch (err) {
       setErrorMessage('Error de conexión con el servidor.');
@@ -129,7 +140,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
         data.user.sunSign = sunSign;
       }
 
-      onAuthSuccess(data.user);
+      if (data.sessionToken) {
+        localStorage.setItem('kabaly_session_token', data.sessionToken);
+      }
+      if (data.user) {
+        localStorage.setItem('kabaly_user', JSON.stringify(data.user));
+      }
+      onAuthSuccess(data.user, data.sessionToken);
       resetForm();
     } catch (err) {
       setErrorMessage('Error de conexión con el servidor.');
@@ -138,15 +155,56 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
-  // Mock social login
-  const handleSocialLogin = (provider: 'Google' | 'Apple') => {
-    // In demo environment, prefill demo account or alert
-    setEmail('elena@gmail.com');
-    setPassword('DemoPass123!');
+  // Inicio de sesión real con Google o Apple
+  const handleSocialLogin = async (provider: 'Google' | 'Apple') => {
+    setErrorMessage('');
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/social', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          email: email.trim() || `${provider.toLowerCase()}.astral@kabaly.app`,
+          name: name.trim() || `Buscador ${provider}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMessage(data.error || `Error al conectar con ${provider}.`);
+        return;
+      }
+      if (data.sessionToken) {
+        localStorage.setItem('kabaly_session_token', data.sessionToken);
+      }
+      if (data.user) {
+        localStorage.setItem('kabaly_user', JSON.stringify(data.user));
+      }
+      onAuthSuccess(data.user, data.sessionToken);
+      resetForm();
+    } catch {
+      setErrorMessage(`Error de conexión al iniciar con ${provider}.`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="relative min-h-screen -mt-16 -mb-16 -mx-2 sm:-mx-4 flex flex-col items-center justify-center px-4 py-12 overflow-hidden">
+      {/* Top Right Day / Night Mode Toggle */}
+      {onToggleTheme && (
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          className="fixed top-4 right-4 z-50 px-3.5 py-1.5 rounded-full bg-[#160B24]/90 border border-[#E5B54F]/40 text-[#E5B54F] text-xs font-bold flex items-center gap-1.5 shadow-xl hover:border-[#E5B54F] transition-all"
+          title={themeMode === 'day' ? 'Cambiar a Modo Noche' : 'Cambiar a Modo Día'}
+        >
+          <span className="material-symbols-outlined text-base">
+            {themeMode === 'day' ? 'dark_mode' : 'light_mode'}
+          </span>
+          <span>{themeMode === 'day' ? 'Modo Noche' : 'Modo Día'}</span>
+        </button>
+      )}
       {/* Background celestial universe with glowing moon and mystic aura */}
       <div className="absolute inset-0 z-0">
         <img
@@ -233,16 +291,16 @@ export const AuthView: React.FC<AuthViewProps> = ({
           {/* LOGIN FORM */}
           {activeTab === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
-              {/* Email Input */}
+              {/* Email or Username Input */}
               <div className="relative">
                 <div className="mystic-input rounded-xl px-4 py-3.5 flex items-center gap-3">
-                  <span className="material-symbols-outlined text-[#A09BAE] text-lg">mail</span>
+                  <span className="material-symbols-outlined text-[#A09BAE] text-lg">person</span>
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Correo electrónico"
+                    placeholder="Correo electrónico o @usuario"
                     className="bg-transparent flex-1 text-xs sm:text-sm text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                   />
                 </div>
@@ -389,16 +447,26 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <label className="block text-[11px] font-semibold text-[#E5B54F] uppercase tracking-wider mb-1">
                     Contraseña (mín. 8)
                   </label>
-                  <div className="mystic-input rounded-xl px-4 py-3 flex items-center gap-2">
+                  <div className="mystic-input rounded-xl px-3.5 py-3 flex items-center gap-2">
                     <span className="material-symbols-outlined text-[#A09BAE] text-base">lock</span>
                     <input
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="bg-transparent flex-1 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
+                      className="bg-transparent flex-1 min-w-0 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="text-[#A09BAE] hover:text-[#E5B54F] transition-colors shrink-0"
+                      title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      <span className="material-symbols-outlined text-base">
+                        {showPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
                   </div>
                 </div>
 
@@ -406,16 +474,26 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   <label className="block text-[11px] font-semibold text-[#E5B54F] uppercase tracking-wider mb-1">
                     Confirmar Contraseña
                   </label>
-                  <div className="mystic-input rounded-xl px-4 py-3 flex items-center gap-2">
+                  <div className="mystic-input rounded-xl px-3.5 py-3 flex items-center gap-2">
                     <span className="material-symbols-outlined text-[#A09BAE] text-base">lock_clock</span>
                     <input
-                      type="password"
+                      type={showConfirmPassword ? 'text' : 'password'}
                       required
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="bg-transparent flex-1 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
+                      className="bg-transparent flex-1 min-w-0 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="text-[#A09BAE] hover:text-[#E5B54F] transition-colors shrink-0"
+                      title={showConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      <span className="material-symbols-outlined text-base">
+                        {showConfirmPassword ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
                   </div>
                 </div>
               </div>

@@ -14,6 +14,8 @@ import { initDatabase, getDb, getDbError } from './src/db/database';
 import {
   registerUser,
   loginUser,
+  socialLoginUser,
+  restoreSessionByUserIdOrEmail,
   logoutUser,
   SESSION_COOKIE_NAME,
 } from './src/auth/authService';
@@ -144,6 +146,7 @@ export async function createServerApp() {
   }
 
   const app = express();
+  app.set('trust proxy', 1);
 
   app.use(express.json({
     verify: (req: any, _res, buf) => {
@@ -218,14 +221,14 @@ export async function createServerApp() {
         // Ignorar errores de SMTP en el registro
       }
 
-      res.status(201).json({ success: true, user });
+      res.status(201).json({ success: true, user, sessionToken });
     } catch (err: any) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || 'Error interno al registrar usuario.' });
     }
   });
 
-  // Inicio de sesión
+  // Inicio de sesión (con correo electrónico, @handle o nombre de usuario)
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -237,10 +240,52 @@ export async function createServerApp() {
       });
 
       setSessionCookie(res, sessionToken);
-      res.json({ success: true, user });
+      res.json({ success: true, user, sessionToken });
     } catch (err: any) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || 'Error al iniciar sesión.' });
+    }
+  });
+
+  // Inicio de sesión rápido con Google o Apple
+  app.post('/api/auth/social', async (req, res) => {
+    try {
+      const { provider, email, name } = req.body || {};
+      const { user, sessionToken } = await socialLoginUser({
+        provider: provider === 'Apple' ? 'Apple' : 'Google',
+        email,
+        name,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+      });
+
+      setSessionCookie(res, sessionToken);
+      res.json({ success: true, user, sessionToken });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Error en inicio de sesión social.' });
+    }
+  });
+
+  // Restaurar sesión persistente al recargar la página si el navegador conserva el usuario
+  app.post('/api/auth/restore', async (req, res) => {
+    try {
+      if (req.user) {
+        return res.json({ success: true, user: req.user, sessionToken: req.sessionToken });
+      }
+      const { userId, email } = req.body || {};
+      const restored = await restoreSessionByUserIdOrEmail({
+        userId,
+        email,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+      });
+      if (!restored) {
+        return res.status(404).json({ success: false, user: null });
+      }
+      setSessionCookie(res, restored.sessionToken);
+      res.json({ success: true, user: restored.user, sessionToken: restored.sessionToken });
+    } catch {
+      res.status(500).json({ success: false, user: null });
     }
   });
 

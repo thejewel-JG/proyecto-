@@ -49,17 +49,90 @@ export const App: React.FC = () => {
   const [coinPackages, setCoinPackages] = useState<CoinPackage[]>([]);
   const [gifts, setGifts] = useState<Gift[]>([]);
 
-  // Navigation & View state
-  const [activeTab, setActiveTab] = useState<MainTab>('feed');
+  // Navigation & View state (Persistido en localStorage para que al recargar se quede abierto donde estabas)
+  const [activeTab, setActiveTab] = useState<MainTab>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('kabaly_active_tab') as MainTab | null;
+      if (saved && ['feed', 'explore', 'live', 'messages', 'astra_ai', 'profile'].includes(saved)) {
+        return saved;
+      }
+    }
+    return 'feed';
+  });
   const [autoOpenGoLive, setAutoOpenGoLive] = useState<boolean>(false);
-  const [profileSubTab, setProfileSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>('publicaciones');
+  const [profileSubTab, setProfileSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('kabaly_profile_subtab') as any;
+      if (saved) return saved;
+    }
+    return 'publicaciones';
+  });
   const [activeCategory, setActiveCategory] = useState<Category>('Para ti');
-  const [selectedTarotistaId, setSelectedTarotistaId] = useState<string | null>(null);
+  const [selectedTarotistaId, setSelectedTarotistaId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('kabaly_selected_profile_id') || null;
+    }
+    return null;
+  });
   const [activeConsultationId, setActiveConsultationId] = useState<string | null>(null);
 
-  // Authenticated User State (Elimina la selección automática de usuarios demo)
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isGuestExploring, setIsGuestExploring] = useState<boolean>(false);
+  // Modo Día / Modo Noche (Persistido en localStorage)
+  const [themeMode, setThemeMode] = useState<'night' | 'day'>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('kabaly_theme') === 'day' ? 'day' : 'night';
+    }
+    return 'night';
+  });
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('theme-day', themeMode === 'day');
+      localStorage.setItem('kabaly_theme', themeMode);
+    }
+  }, [themeMode]);
+
+  const handleToggleTheme = () => {
+    setThemeMode((prev) => (prev === 'night' ? 'day' : 'night'));
+  };
+
+  // Authenticated User State (Restaurado sincrónicamente de localStorage para no cerrar sesión nunca al recargar)
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('kabaly_user');
+        if (raw) return JSON.parse(raw);
+      } catch {}
+    }
+    return null;
+  });
+  const [isGuestExploring, setIsGuestExploring] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('kabaly_guest_exploring') === '1';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kabaly_active_tab', activeTab);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kabaly_profile_subtab', profileSubTab);
+    }
+  }, [profileSubTab]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (selectedTarotistaId) {
+        localStorage.setItem('kabaly_selected_profile_id', selectedTarotistaId);
+      } else {
+        localStorage.removeItem('kabaly_selected_profile_id');
+      }
+    }
+  }, [selectedTarotistaId]);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showSpendingLimits, setShowSpendingLimits] = useState<boolean>(false);
   const [showCreatePostModal, setShowCreatePostModal] = useState<boolean>(false);
@@ -154,14 +227,42 @@ export const App: React.FC = () => {
     return () => es.close();
   }, [currentUser]);
 
-  // Load state from backend server
+  // Load state from backend server (preserva siempre la sesión abierta hasta cierre explícito)
   const fetchState = async () => {
     try {
       const res = await fetch('/api/state');
       const data = await res.json();
-      if (data.currentUser !== undefined) {
+
+      if (data.currentUser) {
         setCurrentUser(data.currentUser);
+        localStorage.setItem('kabaly_user', JSON.stringify(data.currentUser));
+      } else {
+        // Si el navegador tiene usuario guardado en localStorage, restaurar su sesión en el servidor automáticamente
+        const savedRaw = localStorage.getItem('kabaly_user');
+        if (savedRaw) {
+          try {
+            const savedUser = JSON.parse(savedRaw);
+            if (savedUser && (savedUser.id || savedUser.email)) {
+              const restRes = await fetch('/api/auth/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: savedUser.id, email: savedUser.email }),
+              });
+              const restData = await restRes.json().catch(() => ({}));
+              if (restRes.ok && restData.user) {
+                if (restData.sessionToken) {
+                  localStorage.setItem('kabaly_session_token', restData.sessionToken);
+                }
+                localStorage.setItem('kabaly_user', JSON.stringify(restData.user));
+                setCurrentUser(restData.user);
+              } else {
+                setCurrentUser(savedUser);
+              }
+            }
+          } catch {}
+        }
       }
+
       setTarotistaProfiles(data.tarotistaProfiles || []);
       setVideos(data.videos || []);
       setLiveStreams(data.liveStreams || []);
@@ -181,20 +282,30 @@ export const App: React.FC = () => {
     fetchState();
   }, []);
 
-  const handleAuthSuccess = (user: User) => {
+  const handleAuthSuccess = (user: User, sessionToken?: string) => {
     setCurrentUser(user);
+    localStorage.setItem('kabaly_user', JSON.stringify(user));
+    if (sessionToken) {
+      localStorage.setItem('kabaly_session_token', sessionToken);
+    }
     fetchState();
   };
 
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      setCurrentUser(null);
-      setActiveTab('feed');
-      await fetchState();
     } catch (e) {
       console.error(e);
     }
+    localStorage.removeItem('kabaly_user');
+    localStorage.removeItem('kabaly_session_token');
+    localStorage.removeItem('kabaly_active_tab');
+    localStorage.removeItem('kabaly_selected_profile_id');
+    localStorage.removeItem('kabaly_guest_exploring');
+    setCurrentUser(null);
+    setIsGuestExploring(false);
+    setSelectedTarotistaId(null);
+    setActiveTab('feed');
   };
 
   // Video Actions
@@ -580,6 +691,8 @@ export const App: React.FC = () => {
           }}
           unreadMessagesCount={unreadMessagesCount}
           unreadNotificationsCount={unreadNotificationsCount}
+          themeMode={themeMode}
+          onToggleTheme={handleToggleTheme}
         />
       )}
 
@@ -619,10 +732,15 @@ export const App: React.FC = () => {
           /* VIEW 3: Main Tabs or Full Auth View */
           !currentUser && !isGuestExploring ? (
             <AuthView
-              onAuthSuccess={(user) => {
-                handleAuthSuccess(user);
+              onAuthSuccess={(user, token) => {
+                handleAuthSuccess(user, token);
               }}
-              onExploreAsGuest={() => setIsGuestExploring(true)}
+              onExploreAsGuest={() => {
+                localStorage.setItem('kabaly_guest_exploring', '1');
+                setIsGuestExploring(true);
+              }}
+              themeMode={themeMode}
+              onToggleTheme={handleToggleTheme}
             />
           ) : (
             <>
@@ -1033,6 +1151,7 @@ export const App: React.FC = () => {
                     onOpenLimitsModal={() => setShowSpendingLimits(true)}
                     onUpdateProfile={handleUpdateProfile}
                     onRefreshUser={fetchState}
+                    onLogout={handleLogout}
                     onCreatePost={async () => {}}
                     onSelectConsultation={(id) => setActiveConsultationId(id)}
                     onViewPublicProfile={(uid) => setSelectedTarotistaId(uid)}

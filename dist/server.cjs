@@ -2060,7 +2060,7 @@ var import_crypto = __toESM(require("crypto"), 1);
 var import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
 init_database();
 var SESSION_COOKIE_NAME = "kabaly_session";
-var SESSION_DURATION_DAYS = 7;
+var SESSION_DURATION_DAYS = 365;
 async function registerUser(params) {
   const db = await getDb();
   const name = (params.name || "").trim();
@@ -2193,6 +2193,92 @@ async function registerUser(params) {
   };
   return { user, sessionToken };
 }
+async function socialLoginUser(params) {
+  const db = await getDb();
+  const providerLower = (params.provider || "Google").toLowerCase();
+  const email = (params.email || `${providerLower}.user@kabaly.app`).trim().toLowerCase();
+  const displayName = (params.name || (params.provider === "Apple" ? "Usuario Apple Astral" : "Usuario Google Astral")).trim();
+  let row = await db.get("SELECT * FROM users WHERE LOWER(email) = ?", [email]);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (!row) {
+    const userId = `usr_${providerLower}_${Date.now()}_${import_crypto.default.randomBytes(3).toString("hex")}`;
+    const randomPassHash = await import_bcryptjs2.default.hash(import_crypto.default.randomBytes(16).toString("hex"), 10);
+    const defaultAvatar = params.provider === "Apple" ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200" : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200";
+    const handle = `@${displayName.toLowerCase().replace(/[^a-z0-9_]/g, "") || providerLower}`;
+    await db.run(
+      `INSERT INTO users (
+        id, name, email, password_hash, role, avatar, handle, coins_balance, is_age_verified, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'cliente', ?, ?, 0, 1, ?, ?)`,
+      [userId, displayName, email, randomPassHash, defaultAvatar, handle, now, now]
+    );
+    row = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+  }
+  const sessionToken = await createSession(row.id, params.userAgent, params.ip);
+  const user = {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    avatar: row.avatar,
+    coverImage: row.cover_image,
+    handle: row.handle,
+    bio: row.bio,
+    sunSign: row.sun_sign || void 0,
+    moonSign: row.moon_sign || void 0,
+    risingSign: row.rising_sign || void 0,
+    rulingArcana: row.ruling_arcana || void 0,
+    spiritualGift: row.spiritual_gift || void 0,
+    isPrivate: !!row.is_private,
+    coinsBalance: row.coins_balance || 0,
+    purchasedCoinsBalance: row.purchased_coins_balance || 0,
+    earningsCoinsBalance: row.earnings_coins_balance || 0,
+    isAgeVerified: !!row.is_age_verified,
+    spendingLimitDaily: row.spending_limit_daily,
+    spendingLimitWeekly: row.spending_limit_weekly,
+    spentToday: row.spent_today || 0,
+    spentThisWeek: row.spent_this_week || 0,
+    createdAt: row.created_at
+  };
+  return { user, sessionToken };
+}
+async function restoreSessionByUserIdOrEmail(params) {
+  const db = await getDb();
+  let row = null;
+  if (params.userId) {
+    row = await db.get("SELECT * FROM users WHERE id = ?", [params.userId]);
+  }
+  if (!row && params.email) {
+    row = await db.get("SELECT * FROM users WHERE LOWER(email) = ?", [params.email.trim().toLowerCase()]);
+  }
+  if (!row) return null;
+  const sessionToken = await createSession(row.id, params.userAgent, params.ip);
+  const user = {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    avatar: row.avatar,
+    coverImage: row.cover_image,
+    handle: row.handle,
+    bio: row.bio,
+    sunSign: row.sun_sign || void 0,
+    moonSign: row.moon_sign || void 0,
+    risingSign: row.rising_sign || void 0,
+    rulingArcana: row.ruling_arcana || void 0,
+    spiritualGift: row.spiritual_gift || void 0,
+    isPrivate: !!row.is_private,
+    coinsBalance: row.coins_balance || 0,
+    purchasedCoinsBalance: row.purchased_coins_balance || 0,
+    earningsCoinsBalance: row.earnings_coins_balance || 0,
+    isAgeVerified: !!row.is_age_verified,
+    spendingLimitDaily: row.spending_limit_daily,
+    spendingLimitWeekly: row.spending_limit_weekly,
+    spentToday: row.spent_today || 0,
+    spentThisWeek: row.spent_this_week || 0,
+    createdAt: row.created_at
+  };
+  return { user, sessionToken };
+}
 async function loginUser(params) {
   const db = await getDb();
   const email = (params.email || "").trim().toLowerCase();
@@ -2214,9 +2300,15 @@ async function loginUser(params) {
       };
     }
   }
+  const cleanHandle = email.startsWith("@") ? email : `@${email.replace(/\s+/g, "_")}`;
+  const rawHandle = email.replace(/^@/, "");
   const row = await db.get(
-    "SELECT * FROM users WHERE email = ?",
-    [email]
+    `SELECT * FROM users
+     WHERE LOWER(email) = ?
+        OR LOWER(handle) = ?
+        OR LOWER(handle) = ?
+        OR LOWER(name) = ?`,
+    [email, cleanHandle, rawHandle, email]
   );
   let isPasswordValid = false;
   if (row) {
@@ -2349,9 +2441,10 @@ async function logoutUser(sessionToken) {
 async function attachUserMiddleware(req2, res, next) {
   try {
     const cookieToken = req2.cookies?.[SESSION_COOKIE_NAME];
+    const headerToken = req2.headers["x-kabaly-session"];
     const authHeader = req2.headers.authorization;
     const bearerToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
-    const token = cookieToken || bearerToken;
+    const token = cookieToken || headerToken || bearerToken;
     if (token) {
       const user = await getSessionUser(token);
       req2.user = user;
@@ -2389,18 +2482,20 @@ function requireAdmin(req2, res, next) {
   next();
 }
 function setSessionCookie(res, token) {
+  const isHttps = res.req?.secure || res.req?.headers?.["x-forwarded-proto"] === "https";
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: !!isHttps,
     sameSite: "lax",
     maxAge: SESSION_DURATION_DAYS * 24 * 60 * 60 * 1e3,
     path: "/"
   });
 }
 function clearSessionCookie(res) {
+  const isHttps = res.req?.secure || res.req?.headers?.["x-forwarded-proto"] === "https";
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: !!isHttps,
     sameSite: "lax",
     path: "/"
   });
@@ -6324,6 +6419,7 @@ async function createServerApp() {
     console.error("[Database Warning]:", err.message);
   }
   const app = (0, import_express.default)();
+  app.set("trust proxy", 1);
   app.use(import_express.default.json({
     verify: (req2, _res, buf) => {
       req2.rawBody = buf;
@@ -6381,7 +6477,7 @@ async function createServerApp() {
         });
       } catch {
       }
-      res.status(201).json({ success: true, user });
+      res.status(201).json({ success: true, user, sessionToken });
     } catch (err) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || "Error interno al registrar usuario." });
@@ -6397,10 +6493,47 @@ async function createServerApp() {
         ip: req2.ip
       });
       setSessionCookie(res, sessionToken);
-      res.json({ success: true, user });
+      res.json({ success: true, user, sessionToken });
     } catch (err) {
       const status = err.status || 500;
       res.status(status).json({ error: err.message || "Error al iniciar sesi\xF3n." });
+    }
+  });
+  app.post("/api/auth/social", async (req2, res) => {
+    try {
+      const { provider, email, name } = req2.body || {};
+      const { user, sessionToken } = await socialLoginUser({
+        provider: provider === "Apple" ? "Apple" : "Google",
+        email,
+        name,
+        userAgent: req2.headers["user-agent"],
+        ip: req2.ip
+      });
+      setSessionCookie(res, sessionToken);
+      res.json({ success: true, user, sessionToken });
+    } catch (err) {
+      res.status(500).json({ error: err.message || "Error en inicio de sesi\xF3n social." });
+    }
+  });
+  app.post("/api/auth/restore", async (req2, res) => {
+    try {
+      if (req2.user) {
+        return res.json({ success: true, user: req2.user, sessionToken: req2.sessionToken });
+      }
+      const { userId, email } = req2.body || {};
+      const restored = await restoreSessionByUserIdOrEmail({
+        userId,
+        email,
+        userAgent: req2.headers["user-agent"],
+        ip: req2.ip
+      });
+      if (!restored) {
+        return res.status(404).json({ success: false, user: null });
+      }
+      setSessionCookie(res, restored.sessionToken);
+      res.json({ success: true, user: restored.user, sessionToken: restored.sessionToken });
+    } catch {
+      res.status(500).json({ success: false, user: null });
     }
   });
   app.post("/api/auth/logout", async (req2, res) => {

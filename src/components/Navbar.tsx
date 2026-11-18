@@ -16,6 +16,8 @@ interface NavbarProps {
   onOpenNotifications?: () => void;
   unreadMessagesCount?: number;
   unreadNotificationsCount?: number;
+  themeMode?: 'night' | 'day';
+  onToggleTheme?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -33,6 +35,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNotifications,
   unreadMessagesCount = 0,
   unreadNotificationsCount = 0,
+  themeMode = 'night',
+  onToggleTheme,
 }) => {
   const [showDrawerMenu, setShowDrawerMenu] = useState(false);
 
@@ -77,8 +81,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             </h1>
           </div>
 
-          {/* Right: Search + Activity Heart/Bell + Instagram DM Paper Plane + User Avatar / Coins */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
+          {/* Right: Theme Day/Night + Search + Activity Bell + DM Paper Plane + User Avatar */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Day / Night Mode Button */}
+            {onToggleTheme && (
+              <button
+                onClick={onToggleTheme}
+                className="w-8 h-8 rounded-full bg-[#1C102E] border border-[#E5B54F]/35 flex items-center justify-center text-[#E5B54F] hover:bg-[#E5B54F] hover:text-[#0B0911] transition-all"
+                title={themeMode === 'day' ? 'Cambiar a Modo Noche' : 'Cambiar a Modo Día'}
+              >
+                <span className="material-symbols-outlined text-lg">
+                  {themeMode === 'day' ? 'dark_mode' : 'light_mode'}
+                </span>
+              </button>
+            )}
+
             {/* Search Icon */}
             <button
               onClick={onOpenSearch}
@@ -210,6 +227,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="material-symbols-outlined text-lg text-[#E5B54F]">account_balance_wallet</span>
                   <span>Billetera Astral & Monedas</span>
                 </button>
+
+                {onToggleTheme && (
+                  <button
+                    onClick={() => { onToggleTheme(); }}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-[#F7E7C1] hover:bg-[#E5B54F]/10 hover:text-[#E5B54F] transition-colors"
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-lg text-[#E5B54F]">
+                        {themeMode === 'day' ? 'dark_mode' : 'light_mode'}
+                      </span>
+                      <span>{themeMode === 'day' ? 'Activar Modo Noche' : 'Activar Modo Día'}</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#E5B54F]/20 text-[#E5B54F] font-bold">
+                      {themeMode === 'day' ? '☀️ Día' : '🌙 Noche'}
+                    </span>
+                  </button>
+                )}
 
                 {currentUser?.role === 'admin' && (
                   <button

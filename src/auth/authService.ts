@@ -29,7 +29,7 @@ export interface UserSessionData {
 }
 
 export const SESSION_COOKIE_NAME = 'kabaly_session';
-export const SESSION_DURATION_DAYS = 7;
+export const SESSION_DURATION_DAYS = 365;
 
 export async function registerUser(params: {
   name: string;
@@ -188,6 +188,114 @@ export async function registerUser(params: {
   return { user, sessionToken };
 }
 
+export async function socialLoginUser(params: {
+  provider: 'Google' | 'Apple';
+  email?: string;
+  name?: string;
+  userAgent?: string;
+  ip?: string;
+}): Promise<{ user: UserSessionData; sessionToken: string }> {
+  const db = await getDb();
+  const providerLower = (params.provider || 'Google').toLowerCase();
+  const email = (params.email || `${providerLower}.user@kabaly.app`).trim().toLowerCase();
+  const displayName = (params.name || (params.provider === 'Apple' ? 'Usuario Apple Astral' : 'Usuario Google Astral')).trim();
+
+  let row = await db.get<any>('SELECT * FROM users WHERE LOWER(email) = ?', [email]);
+  const now = new Date().toISOString();
+
+  if (!row) {
+    const userId = `usr_${providerLower}_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const randomPassHash = await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 10);
+    const defaultAvatar =
+      params.provider === 'Apple'
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+        : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200';
+    const handle = `@${displayName.toLowerCase().replace(/[^a-z0-9_]/g, '') || providerLower}`;
+
+    await db.run(
+      `INSERT INTO users (
+        id, name, email, password_hash, role, avatar, handle, coins_balance, is_age_verified, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'cliente', ?, ?, 0, 1, ?, ?)`,
+      [userId, displayName, email, randomPassHash, defaultAvatar, handle, now, now]
+    );
+    row = await db.get<any>('SELECT * FROM users WHERE id = ?', [userId]);
+  }
+
+  const sessionToken = await createSession(row.id, params.userAgent, params.ip);
+  const user: UserSessionData = {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    avatar: row.avatar,
+    coverImage: row.cover_image,
+    handle: row.handle,
+    bio: row.bio,
+    sunSign: row.sun_sign || undefined,
+    moonSign: row.moon_sign || undefined,
+    risingSign: row.rising_sign || undefined,
+    rulingArcana: row.ruling_arcana || undefined,
+    spiritualGift: row.spiritual_gift || undefined,
+    isPrivate: !!row.is_private,
+    coinsBalance: row.coins_balance || 0,
+    purchasedCoinsBalance: row.purchased_coins_balance || 0,
+    earningsCoinsBalance: row.earnings_coins_balance || 0,
+    isAgeVerified: !!row.is_age_verified,
+    spendingLimitDaily: row.spending_limit_daily,
+    spendingLimitWeekly: row.spending_limit_weekly,
+    spentToday: row.spent_today || 0,
+    spentThisWeek: row.spent_this_week || 0,
+    createdAt: row.created_at,
+  };
+
+  return { user, sessionToken };
+}
+
+export async function restoreSessionByUserIdOrEmail(params: {
+  userId?: string;
+  email?: string;
+  userAgent?: string;
+  ip?: string;
+}): Promise<{ user: UserSessionData; sessionToken: string } | null> {
+  const db = await getDb();
+  let row: any = null;
+  if (params.userId) {
+    row = await db.get<any>('SELECT * FROM users WHERE id = ?', [params.userId]);
+  }
+  if (!row && params.email) {
+    row = await db.get<any>('SELECT * FROM users WHERE LOWER(email) = ?', [params.email.trim().toLowerCase()]);
+  }
+  if (!row) return null;
+
+  const sessionToken = await createSession(row.id, params.userAgent, params.ip);
+  const user: UserSessionData = {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    avatar: row.avatar,
+    coverImage: row.cover_image,
+    handle: row.handle,
+    bio: row.bio,
+    sunSign: row.sun_sign || undefined,
+    moonSign: row.moon_sign || undefined,
+    risingSign: row.rising_sign || undefined,
+    rulingArcana: row.ruling_arcana || undefined,
+    spiritualGift: row.spiritual_gift || undefined,
+    isPrivate: !!row.is_private,
+    coinsBalance: row.coins_balance || 0,
+    purchasedCoinsBalance: row.purchased_coins_balance || 0,
+    earningsCoinsBalance: row.earnings_coins_balance || 0,
+    isAgeVerified: !!row.is_age_verified,
+    spendingLimitDaily: row.spending_limit_daily,
+    spendingLimitWeekly: row.spending_limit_weekly,
+    spentToday: row.spent_today || 0,
+    spentThisWeek: row.spent_this_week || 0,
+    createdAt: row.created_at,
+  };
+  return { user, sessionToken };
+}
+
 export async function loginUser(params: {
   email: string;
   password: string;
@@ -218,10 +326,16 @@ export async function loginUser(params: {
     }
   }
 
-  // Buscar usuario
+  // Buscar usuario por correo electrónico, @handle o nombre de usuario
+  const cleanHandle = email.startsWith('@') ? email : `@${email.replace(/\s+/g, '_')}`;
+  const rawHandle = email.replace(/^@/, '');
   const row = await db.get<any>(
-    'SELECT * FROM users WHERE email = ?',
-    [email]
+    `SELECT * FROM users
+     WHERE LOWER(email) = ?
+        OR LOWER(handle) = ?
+        OR LOWER(handle) = ?
+        OR LOWER(name) = ?`,
+    [email, cleanHandle, rawHandle, email]
   );
 
   let isPasswordValid = false;

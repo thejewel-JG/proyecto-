@@ -4,7 +4,7 @@ import { UserRole } from '../types';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthSuccess: (user: any) => void;
+  onAuthSuccess: (user: any, sessionToken?: string) => void;
 }
 
 const ZODIAC_SIGNS = [
@@ -21,6 +21,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [sunSign, setSunSign] = useState('');
@@ -61,7 +62,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-      onAuthSuccess(data.user);
+      if (data.sessionToken) {
+        localStorage.setItem('kabaly_session_token', data.sessionToken);
+      }
+      if (data.user) {
+        localStorage.setItem('kabaly_user', JSON.stringify(data.user));
+      }
+      onAuthSuccess(data.user, data.sessionToken);
       resetForm();
       onClose();
     } catch (err) {
@@ -131,11 +138,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         data.user.sunSign = sunSign;
       }
 
-      onAuthSuccess(data.user);
+      if (data.sessionToken) {
+        localStorage.setItem('kabaly_session_token', data.sessionToken);
+      }
+      if (data.user) {
+        localStorage.setItem('kabaly_user', JSON.stringify(data.user));
+      }
+      onAuthSuccess(data.user, data.sessionToken);
       resetForm();
       onClose();
     } catch (err) {
       setErrorMessage('Error de conexión con el servidor.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSocialLogin = async (provider: 'Google' | 'Apple') => {
+    setErrorMessage('');
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/social', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          email: email.trim() || `${provider.toLowerCase()}.astral@kabaly.app`,
+          name: name.trim() || `Buscador ${provider}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMessage(data.error || `Error al conectar con ${provider}.`);
+        return;
+      }
+      if (data.sessionToken) {
+        localStorage.setItem('kabaly_session_token', data.sessionToken);
+      }
+      if (data.user) {
+        localStorage.setItem('kabaly_user', JSON.stringify(data.user));
+      }
+      onAuthSuccess(data.user, data.sessionToken);
+      resetForm();
+      onClose();
+    } catch {
+      setErrorMessage(`Error de conexión al iniciar con ${provider}.`);
     } finally {
       setIsLoading(false);
     }
@@ -216,13 +263,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {activeTab === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div className="mystic-input rounded-xl px-4 py-3 flex items-center gap-3">
-              <span className="material-symbols-outlined text-[#A09BAE] text-base">mail</span>
+              <span className="material-symbols-outlined text-[#A09BAE] text-base">person</span>
               <input
-                type="email"
+                type="text"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Correo electrónico"
+                placeholder="Correo electrónico o @usuario"
                 className="bg-transparent flex-1 text-xs sm:text-sm text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
               />
             </div>
@@ -256,6 +303,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span>{isLoading ? 'Entrando...' : 'Entrar en KABALY'}</span>
               <span className="text-sm">✦</span>
             </button>
+
+            <div className="pt-3">
+              <div className="relative flex items-center justify-center mb-3">
+                <div className="border-t border-white/10 w-full" />
+                <span className="bg-[#150B23] px-3 text-[10px] text-[#A09BAE] uppercase tracking-wider whitespace-nowrap">
+                  o continúa con
+                </span>
+                <div className="border-t border-white/10 w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleSocialLogin('Google')}
+                  className="mystic-input rounded-xl py-2 px-3 flex items-center justify-center gap-2 hover:border-[#E5B54F]/50 transition-all text-xs font-semibold text-[#F7E7C1]"
+                >
+                  <span>G</span>
+                  <span>Google</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSocialLogin('Apple')}
+                  className="mystic-input rounded-xl py-2 px-3 flex items-center justify-center gap-2 hover:border-[#E5B54F]/50 transition-all text-xs font-semibold text-[#F7E7C1]"
+                >
+                  <span></span>
+                  <span>Apple</span>
+                </button>
+              </div>
+            </div>
           </form>
         )}
 
@@ -287,25 +362,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-2">
+              <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-1.5">
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Contraseña"
-                  className="bg-transparent w-full text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
+                  className="bg-transparent flex-1 min-w-0 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-[#A09BAE] hover:text-[#E5B54F] shrink-0"
+                  title={showPassword ? 'Ocultar' : 'Mostrar'}
+                >
+                  <span className="material-symbols-outlined text-sm">
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
               </div>
-              <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-2">
+              <div className="mystic-input rounded-xl px-3 py-2 flex items-center gap-1.5">
                 <input
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repetir clave"
-                  className="bg-transparent w-full text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
+                  className="bg-transparent flex-1 min-w-0 text-xs text-[#F7E7C1] placeholder-[#A09BAE]/70 outline-none"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="text-[#A09BAE] hover:text-[#E5B54F] shrink-0"
+                  title={showConfirmPassword ? 'Ocultar' : 'Mostrar'}
+                >
+                  <span className="material-symbols-outlined text-sm">
+                    {showConfirmPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
               </div>
             </div>
 

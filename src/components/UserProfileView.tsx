@@ -61,6 +61,7 @@ interface UserProfileViewProps {
   onSelectVideo?: (videoId: string) => void;
   onSelectConsultation?: (consultationId: string) => void;
   onViewPublicProfile?: (userId: string) => void;
+  onLogout?: () => void;
   initialSubTab?: 'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras';
 }
 
@@ -85,6 +86,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onSelectVideo,
   onSelectConsultation,
   onViewPublicProfile,
+  onLogout,
   initialSubTab,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'publicaciones' | 'guardados' | 'estadisticas' | 'monedero' | 'consultas' | 'compras'>(initialSubTab || 'publicaciones');
@@ -660,6 +662,16 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             >
               <span className="material-symbols-outlined text-base">tune</span>
             </button>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="px-2.5 h-8 rounded-full bg-red-950/60 border border-red-500/40 text-red-300 hover:bg-red-600 hover:text-white text-[11px] font-bold flex items-center gap-1 transition-all"
+                title="Cerrar sesión"
+              >
+                <span className="material-symbols-outlined text-sm">logout</span>
+                <span className="hidden sm:inline">Salir</span>
+              </button>
+            )}
           </div>
         </div>
 
